@@ -10,6 +10,7 @@ import { SettingsModal } from "./SettingsModal";
 import { ChatInput } from "./chat/ChatInput";
 import { ChatMessages } from "./chat/ChatMessages";
 import { DEMO_SCENARIOS } from "../utils/mockResponseGenerator";
+import { TOOL_NAMES } from "../utils/toolNames";
 
 export function DemoPage() {
   const location = useLocation();
@@ -137,7 +138,7 @@ export function DemoPage() {
   const handlePermissionError = useCallback(
     (toolName: string, patterns: string[], toolUseId: string) => {
       // Check if this is an ExitPlanMode permission error
-      if (patterns.includes("ExitPlanMode")) {
+      if (patterns.includes(TOOL_NAMES.EXIT_PLAN_MODE)) {
         // For ExitPlanMode, show plan permission interface instead of regular permission
         showPlanModeRequest(""); // Empty plan content since it was already displayed
       } else {

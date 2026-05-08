@@ -12,6 +12,7 @@ import {
   isThinkingMessage,
 } from "./MessageAdapter";
 import type { AllMessage } from "../types";
+import { TOOL_NAMES } from "../utils/toolNames";
 
 describe("MessageAdapter", () => {
   describe("adaptMessagesToWebUI", () => {
@@ -51,7 +52,7 @@ describe("MessageAdapter", () => {
       const messages: AllMessage[] = [
         {
           type: "tool_result",
-          toolName: "Read",
+          toolName: TOOL_NAMES.READ,
           content: "file contents",
           summary: "Read file.txt",
           timestamp: 1000,
@@ -215,7 +216,7 @@ describe("MessageAdapter", () => {
       const messages = adaptMessagesToWebUI([
         {
           type: "tool_result",
-          toolName: "Read",
+          toolName: TOOL_NAMES.READ,
           content: "",
           summary: "Read file",
           timestamp: 1000,
