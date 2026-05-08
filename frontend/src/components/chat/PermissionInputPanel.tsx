@@ -4,7 +4,19 @@ import type { CSSProperties } from "react";
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { JSX } from "react";
-import { formatToolArguments } from "../../utils/toolUtils";
+// Format tool arguments for the permission dialog — always show full details.
+function formatPermissionArgs(input?: Record<string, unknown>): string {
+  if (!input) return "";
+  if (input.command) return String(input.command);
+  if (input.path) return String(input.path);
+  if (input.file_path) return String(input.file_path);
+  if (input.pattern) return String(input.pattern);
+  if (input.url) return String(input.url);
+  // Fallback: show all key=value pairs
+  return Object.entries(input)
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+    .join("\n");
+}
 
 // Helper function to extract command name from pattern like "Bash(ls:*)" -> "ls"
 function extractCommandName(pattern: string, fallbackToolName?: string): string {
@@ -20,11 +32,21 @@ function extractCommandName(pattern: string, fallbackToolName?: string): string 
   return fallbackToolName || pattern;
 }
 
+// Helper function to render tool command details
+function renderCommandDetail(fullCommand: string | null): JSX.Element | null {
+  if (!fullCommand) return null;
+  return (
+    <pre className="mt-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded text-sm font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all">
+      {fullCommand}
+    </pre>
+  );
+}
+
 // Helper function to render permission content based on patterns
 function renderPermissionContent(patterns: string[], toolName: string | undefined, t: TFunction, toolInput?: Record<string, unknown>): JSX.Element {
-  // Build the tool arguments display string
-  const argsDisplay = toolInput ? formatToolArguments(toolInput) : "";
-  const fullCommand = argsDisplay ? `${toolName || "Tool"}${argsDisplay}` : null;
+  // Build the tool arguments display string — always show full details for security
+  const argsDisplay = toolInput ? formatPermissionArgs(toolInput) : "";
+  const fullCommand = argsDisplay ? `${toolName || "Tool"}\n${argsDisplay}` : null;
 
   // Handle empty patterns array — use toolName as fallback
   if (patterns.length === 0) {
@@ -34,11 +56,7 @@ function renderPermissionContent(patterns: string[], toolName: string | undefine
         <p className="text-slate-600 dark:text-slate-300">
           {t("permission.wantsToUse", { command: displayName })}
         </p>
-        {fullCommand && (
-          <pre className="mt-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded text-sm font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all">
-            {fullCommand}
-          </pre>
-        )}
+        {renderCommandDetail(fullCommand)}
       </div>
     );
   }
@@ -52,11 +70,7 @@ function renderPermissionContent(patterns: string[], toolName: string | undefine
         <p className="text-slate-600 dark:text-slate-300">
           {t("permission.wantsToUse", { command: commandNames[0] })}
         </p>
-        {fullCommand && (
-          <pre className="mt-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded text-sm font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all">
-            {fullCommand}
-          </pre>
-        )}
+        {renderCommandDetail(fullCommand)}
       </div>
     );
   }

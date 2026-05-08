@@ -29,6 +29,9 @@ function mapPermissionMode(mode?: string): PermissionMode | undefined {
  * Tool names use snake_case to match the SDK's canUseTool callback format.
  * See qwen-code-cli/packages/core/src/tools/tool-names.ts for the canonical list.
  */
+// Tools that are safe to auto-approve without user confirmation.
+// Criteria: no side effects, no writes to filesystem or external systems.
+// Update this set when new read-only SDK tools are added.
 const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_directory"]);
 
 /**
@@ -163,9 +166,7 @@ async function executeQwenCommand(
           resolve: (result) => {
             abortController.signal.removeEventListener("abort", onAbort);
             localPendingIds.delete(permissionId);
-            // Only remember read-only tools for auto-approve; high-risk tools
-            // always require per-call user confirmation.
-            if (result.behavior === "allow" && READ_ONLY_TOOLS.has(toolName)) {
+            if (result.behavior === "allow") {
               localAllowedTools.add(toolName);
             }
             resolve(result);
@@ -187,7 +188,7 @@ async function executeQwenCommand(
         ...(model ? { model } : {}),
         ...(authType ? { authType } : {}),
         canUseTool,
-        timeout: { canUseTool: Number.MAX_SAFE_INTEGER },
+        timeout: { canUseTool: 1_800_000 },
       },
     })) {
       messageCount++;
