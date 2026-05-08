@@ -138,3 +138,8 @@ export function formatToolArguments(input?: Record<string, unknown>): string {
 
   return "";
 }
+
+// Extract the base command name from a shell command string
+export function extractBaseCommand(command: string): string {
+  return command.trim().split(/\s+/)[0] || "";
+}

@@ -34,6 +34,10 @@ function mapPermissionMode(mode?: string): PermissionMode | undefined {
 // Update this set when new read-only SDK tools are added.
 const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_directory"]);
 
+function extractBaseCommand(command: string): string {
+  return command.trim().split(/\s+/)[0] || "";
+}
+
 /**
  * Executes a Qwen command and sends StreamResponse objects via the provided enqueue callback.
  * Supports canUseTool callback for proactive permission handling.
@@ -125,7 +129,7 @@ async function executeQwenCommand(
 
       // For run_shell_command, also check command-specific entries.
       if (toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
-        const baseCmd = input.command.trim().split(/\s+/)[0] || "";
+        const baseCmd = extractBaseCommand(input.command as string);
         if (baseCmd && localAllowedTools.has(`${toolName}:${baseCmd}`)) {
           logger.chat.debug("canUseTool: auto-approving previously allowed command {toolName}:{baseCmd}", { toolName, baseCmd });
           return { behavior: "allow", updatedInput: input };
@@ -177,7 +181,7 @@ async function executeQwenCommand(
             localPendingIds.delete(permissionId);
             if (result.behavior === "allow") {
               if (scope === "specific" && toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
-                const baseCmd = input.command.trim().split(/\s+/)[0] || "";
+                const baseCmd = extractBaseCommand(input.command as string);
                 if (baseCmd) localAllowedTools.add(`${toolName}:${baseCmd}`);
               } else {
                 localAllowedTools.add(toolName);

@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { JSX } from "react";
-// Format tool arguments for the permission dialog — always show full details.
+import { extractBaseCommand } from "../../utils/toolUtils";
 function formatPermissionArgs(input?: Record<string, unknown>): string {
   if (!input) return "";
   if (input.command) return String(input.command);
@@ -104,7 +104,7 @@ function renderPermanentButtonText(
 ): string {
   // For shell commands, show the specific command being approved
   const specificCommand = toolInput?.command && typeof toolInput.command === "string"
-    ? toolInput.command.split(/\s+/)[0]
+    ? extractBaseCommand(toolInput.command)
     : null;
 
   if (specificCommand) {
@@ -224,7 +224,7 @@ export function PermissionInputPanel({
 
   // Build button config based on tool type
   const baseCommand = toolInput?.command && typeof toolInput.command === "string"
-    ? toolInput.command.trim().split(/\s+/)[0]
+    ? extractBaseCommand(toolInput.command)
     : null;
 
   const buttons = isShellCommand && baseCommand && onAllowAll

@@ -816,14 +816,17 @@ export function ChatPage() {
 
     // Proactive canUseTool flow — stream still open, just respond
     if (permissionRequest.permissionId) {
-      // Persist to localStorage for future requests
-      permissionRequest.patterns.forEach((pattern) => {
-        allowToolPermanent(pattern, allowedTools);
-      });
+      // For shell tools, persist pattern to localStorage; for non-shell, only this request
+      const isShell = permissionRequest.toolName === "run_shell_command";
+      if (isShell) {
+        permissionRequest.patterns.forEach((pattern) => {
+          allowToolPermanent(pattern, allowedTools);
+        });
+      }
       try {
         const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
           updatedInput: permissionRequest.toolInput || {},
-          scope: "specific",
+          ...(isShell ? { scope: "specific" as const } : {}),
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
