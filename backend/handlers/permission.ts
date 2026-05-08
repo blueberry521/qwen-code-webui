@@ -4,7 +4,7 @@ import type { PermissionResult } from "@qwen-code/sdk";
 import { logger } from "../utils/logger.ts";
 
 export interface PendingPermission {
-  resolve: (result: PermissionResult) => void;
+  resolve: (result: PermissionResult, scope?: "specific" | "all") => void;
   abortSignal: AbortSignal;
 }
 
@@ -38,7 +38,7 @@ export async function handlePermissionRespond(
     pending.resolve({
       behavior: "allow",
       updatedInput: body.updatedInput || {},
-    });
+    }, body.scope);
   } else {
     const message = body.message
       ? `${body.message} [proactive]`

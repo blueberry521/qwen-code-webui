@@ -133,6 +133,7 @@ interface PermissionInputPanelProps {
   toolInput?: Record<string, unknown>;
   onAllow: () => void;
   onAllowPermanent: () => void;
+  onAllowAll?: () => void;
   onDeny: () => void;
   getButtonClassName?: (
     buttonType: "allow" | "allowPermanent" | "deny",
@@ -150,6 +151,7 @@ export function PermissionInputPanel({
   toolInput,
   onAllow,
   onAllowPermanent,
+  onAllowAll,
   onDeny,
   getButtonClassName = (_, defaultClassName) => defaultClassName,
   onSelectionChange,
@@ -159,6 +161,7 @@ export function PermissionInputPanel({
   const [selectedOption, setSelectedOption] = useState<Option>("allow");
 
   const effectiveSelectedOption = externalSelectedOption ?? selectedOption;
+  const isShellCommand = toolName === "run_shell_command";
 
   const updateSelectedOption = useCallback(
     (option: Option) => {
@@ -219,6 +222,23 @@ export function PermissionInputPanel({
 
   const unselectedStyle = "border-2 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500";
 
+  // Build button config based on tool type
+  const baseCommand = toolInput?.command && typeof toolInput.command === "string"
+    ? toolInput.command.trim().split(/\s+/)[0]
+    : null;
+
+  const buttons = isShellCommand && baseCommand && onAllowAll
+    ? [
+        { key: "allow" as Option, label: t("permission.allowSpecific", { command: baseCommand }), action: onAllow },
+        { key: "allowPermanent" as Option, label: t("permission.allowAll", { command: baseCommand }), action: onAllowAll },
+        { key: "deny" as Option, label: t("permission.no"), action: onDeny },
+      ]
+    : [
+        { key: "allow" as Option, label: t("permission.yes"), action: onAllow },
+        { key: "allowPermanent" as Option, label: renderPermanentButtonText(patterns, toolName, t, toolInput), action: onAllowPermanent },
+        { key: "deny" as Option, label: t("permission.no"), action: onDeny },
+      ];
+
   return (
     <div className="flex-shrink-0 px-4 py-4 bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl backdrop-blur-sm shadow-sm">
       {/* Header */}
@@ -241,23 +261,7 @@ export function PermissionInputPanel({
 
       {/* Buttons */}
       <div className="space-y-2">
-        {([
-          {
-            key: "allow" as Option,
-            label: t("permission.yes"),
-            action: onAllow,
-          },
-          {
-            key: "allowPermanent" as Option,
-            label: renderPermanentButtonText(patterns, toolName, t, toolInput),
-            action: onAllowPermanent,
-          },
-          {
-            key: "deny" as Option,
-            label: t("permission.no"),
-            action: onDeny,
-          },
-        ]).map(({ key, label, action }) => {
+        {buttons.map(({ key, label, action }) => {
           const isSelected = effectiveSelectedOption === key;
           const selected = selectedStyles[key];
           return (

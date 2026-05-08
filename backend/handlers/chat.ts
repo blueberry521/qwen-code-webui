@@ -123,6 +123,15 @@ async function executeQwenCommand(
         return { behavior: "allow", updatedInput: input };
       }
 
+      // For run_shell_command, also check command-specific entries.
+      if (toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
+        const baseCmd = input.command.trim().split(/\s+/)[0] || "";
+        if (baseCmd && localAllowedTools.has(`${toolName}:${baseCmd}`)) {
+          logger.chat.debug("canUseTool: auto-approving previously allowed command {toolName}:{baseCmd}", { toolName, baseCmd });
+          return { behavior: "allow", updatedInput: input };
+        }
+      }
+
       const permissionId = crypto.randomUUID();
       localPendingIds.add(permissionId);
 
@@ -163,11 +172,16 @@ async function executeQwenCommand(
         abortController.signal.addEventListener("abort", onAbort, { once: true });
 
         pendingPermissions.set(permissionId, {
-          resolve: (result) => {
+          resolve: (result, scope) => {
             abortController.signal.removeEventListener("abort", onAbort);
             localPendingIds.delete(permissionId);
             if (result.behavior === "allow") {
-              localAllowedTools.add(toolName);
+              if (scope === "specific" && toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
+                const baseCmd = input.command.trim().split(/\s+/)[0] || "";
+                if (baseCmd) localAllowedTools.add(`${toolName}:${baseCmd}`);
+              } else {
+                localAllowedTools.add(toolName);
+              }
             }
             resolve(result);
           },

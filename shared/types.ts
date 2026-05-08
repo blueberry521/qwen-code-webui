@@ -44,6 +44,7 @@ export interface PermissionRespondRequest {
   behavior: "allow" | "deny";
   message?: string;
   updatedInput?: Record<string, unknown>;
+  scope?: "specific" | "all";
 }
 
 export interface ProjectInfo {

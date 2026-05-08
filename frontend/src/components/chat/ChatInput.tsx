@@ -20,6 +20,7 @@ interface PermissionData {
   toolInput?: Record<string, unknown>;
   onAllow: () => void;
   onAllowPermanent: () => void;
+  onAllowAll?: () => void;
   onDeny: () => void;
   getButtonClassName?: (
     buttonType: "allow" | "allowPermanent" | "deny",
@@ -367,6 +368,7 @@ export function ChatInput({
         toolInput={permissionData.toolInput}
         onAllow={permissionData.onAllow}
         onAllowPermanent={permissionData.onAllowPermanent}
+        onAllowAll={permissionData.onAllowAll}
         onDeny={permissionData.onDeny}
         getButtonClassName={permissionData.getButtonClassName}
         onSelectionChange={permissionData.onSelectionChange}
