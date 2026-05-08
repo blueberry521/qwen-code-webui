@@ -54,7 +54,7 @@ export function useAbortController() {
 export async function sendPermissionResponse(
   permissionId: string,
   behavior: "allow" | "deny",
-  options?: { message?: string; updatedInput?: Record<string, unknown> },
+  options?: { message?: string; updatedInput?: Record<string, unknown>; scope?: "specific" | "all" },
 ): Promise<Response> {
   return fetch(getPermissionRespondUrl(), {
     method: "POST",

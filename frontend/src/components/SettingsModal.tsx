@@ -5,11 +5,11 @@ import { GeneralSettings } from "./settings/GeneralSettings";
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  allowedTools: string[];
-  onResetPermissions: () => void;
+  allowedTools?: string[];
+  onResetPermissions?: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose, allowedTools, onResetPermissions }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, allowedTools = [], onResetPermissions }: SettingsModalProps) {
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
