@@ -14,6 +14,7 @@ import type {
   ChatMessageData,
   ToolCallData,
 } from "@qwen-code/webui";
+import { TOOL_NAMES } from "../utils/toolNames";
 
 /**
  * Extended message type for internal use
@@ -85,17 +86,16 @@ function convertToolResultToToolCall(
 ): ToolCallData | undefined {
   // Map tool names to webui kind format
   const kindMap: Record<string, string> = {
-    Read: "read",
-    Write: "write",
-    Edit: "edit",
-    Bash: "bash",
-    Execute: "execute",
-    Grep: "search",
-    Glob: "search",
-    WebFetch: "fetch",
-    Think: "think",
-    TodoWrite: "todo_write",
-    SaveMemory: "save_memory",
+    [TOOL_NAMES.READ]: "read",
+    [TOOL_NAMES.WRITE]: "write",
+    [TOOL_NAMES.EDIT]: "edit",
+    [TOOL_NAMES.BASH]: "bash",
+    [TOOL_NAMES.GREP]: "search",
+    [TOOL_NAMES.GLOB]: "search",
+    [TOOL_NAMES.WEB_FETCH]: "fetch",
+    [TOOL_NAMES.THINK]: "think",
+    [TOOL_NAMES.TODO_WRITE]: "todo_write",
+    [TOOL_NAMES.SAVE_MEMORY]: "save_memory",
   };
 
   const isKnownTool = message.toolName in kindMap;

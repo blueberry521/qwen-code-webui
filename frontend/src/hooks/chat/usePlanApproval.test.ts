@@ -1,13 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { createExitPlanModeToolResult } from "../../utils/mockResponseGenerator";
+import { TOOL_NAMES } from "../../utils/toolNames";
 
 // Mock the message converter
 vi.mock("../useMessageConverter", () => ({
   useMessageConverter: () => ({
     createToolResultMessage: vi.fn((data) => ({
       type: "tool_result",
-      toolName: "ExitPlanMode",
+      toolName: TOOL_NAMES.EXIT_PLAN_MODE,
       content: data.content || "Plan rejected",
       summary: "Plan rejection",
       toolUseId: data.tool_use_id,

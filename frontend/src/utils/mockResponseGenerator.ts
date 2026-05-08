@@ -1,6 +1,7 @@
 import type { SDKMessage } from "@qwen-code/sdk";
 import { generateToolPattern } from "./toolUtils";
 import { generateId } from "./id";
+import { TOOL_NAMES } from "./toolNames";
 
 export interface MockStreamResponse {
   type: "claude_json" | "done" | "error";
@@ -45,7 +46,7 @@ export function createSystemMessage(
     cwd: "/Users/demo/qwen-code-webui",
     session_id: sessionId,
     uuid: generateId(),
-    tools: ["Read", "Write", "Edit", "Bash"],
+    tools: [TOOL_NAMES.READ, TOOL_NAMES.WRITE, TOOL_NAMES.EDIT, TOOL_NAMES.BASH],
     mcp_servers: [],
     model: "qwen3-coder-plus",
     permission_mode: "default",
@@ -153,7 +154,7 @@ export function createExitPlanModeToolUse(
         {
           type: "tool_use",
           id: toolUseId,
-          name: "ExitPlanMode",
+          name: TOOL_NAMES.EXIT_PLAN_MODE,
           input: {
             plan: planContent,
           },
@@ -185,7 +186,7 @@ export function createExitPlanModeToolUseWithId(
         {
           type: "tool_use",
           id: toolUseId,
-          name: "ExitPlanMode",
+          name: TOOL_NAMES.EXIT_PLAN_MODE,
           input: {
             plan: planContent,
           },
@@ -336,7 +337,7 @@ export const DEMO_SCENARIOS = {
         type: "assistant" as const,
         delay: 1800,
         data: createToolUseMessage(
-          "Read",
+          TOOL_NAMES.READ,
           { file_path: "/Users/demo/claude-code-webui/frontend/src/App.tsx" },
           "demo-session-files",
           "read-app-tsx",
@@ -346,8 +347,8 @@ export const DEMO_SCENARIOS = {
         type: "permission_error" as const,
         delay: 1000,
         data: {
-          toolName: "Read",
-          pattern: generateToolPattern("Read", "*"),
+          toolName: TOOL_NAMES.READ,
+          pattern: generateToolPattern(TOOL_NAMES.READ, "*"),
           toolUseId: "read-app-tsx",
         },
       },
@@ -393,7 +394,7 @@ export const DEMO_SCENARIOS = {
         type: "assistant" as const,
         delay: 1600,
         data: createToolUseMessage(
-          "Bash",
+          TOOL_NAMES.BASH,
           {
             command:
               "find frontend/src -name '*.tsx' -o -name '*.ts' | head -10",
@@ -406,8 +407,8 @@ export const DEMO_SCENARIOS = {
         type: "permission_error" as const,
         delay: 900,
         data: {
-          toolName: "Bash",
-          pattern: generateToolPattern("Bash", "find"),
+          toolName: TOOL_NAMES.BASH,
+          pattern: generateToolPattern(TOOL_NAMES.BASH, "find"),
           toolUseId: "find-files",
         },
       },
@@ -429,7 +430,7 @@ export const DEMO_SCENARIOS = {
         type: "assistant" as const,
         delay: 1000,
         data: createToolUseMessage(
-          "Read",
+          TOOL_NAMES.READ,
           { file_path: "/Users/demo/claude-code-webui/frontend/src" },
           "demo-session-analysis",
           "read-src-dir",
@@ -471,7 +472,7 @@ export const DEMO_SCENARIOS = {
         type: "assistant" as const,
         delay: 1800,
         data: createToolUseMessage(
-          "Write",
+          TOOL_NAMES.WRITE,
           {
             file_path: "/Users/demo/claude-code-webui/fibonacci.py",
             content: `def fibonacci(n):
@@ -502,8 +503,8 @@ if __name__ == "__main__":
         type: "permission_error" as const,
         delay: 1000,
         data: {
-          toolName: "Write",
-          pattern: generateToolPattern("Write", "*"),
+          toolName: TOOL_NAMES.WRITE,
+          pattern: generateToolPattern(TOOL_NAMES.WRITE, "*"),
           toolUseId: "write-fibonacci",
         },
       },
@@ -540,7 +541,7 @@ if __name__ == "__main__":
         type: "assistant" as const,
         delay: 1200,
         data: createToolUseMessage(
-          "Bash",
+          TOOL_NAMES.BASH,
           {
             command: "python fibonacci.py",
             description: "Run the Fibonacci calculator script",
@@ -553,8 +554,8 @@ if __name__ == "__main__":
         type: "permission_error" as const,
         delay: 800,
         data: {
-          toolName: "Bash",
-          pattern: generateToolPattern("Bash", "python"),
+          toolName: TOOL_NAMES.BASH,
+          pattern: generateToolPattern(TOOL_NAMES.BASH, "python"),
           toolUseId: "run-fibonacci",
         },
       },
@@ -623,7 +624,7 @@ I'll create a comprehensive README.md file for the Qwen Code Web UI project with
             "I'll help you create a comprehensive README.md file! Let me first analyze the project structure and create a documentation plan.",
             {
               id: planToolUseId,
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: { plan: planContent },
             },
             "demo-session-plan",
@@ -664,7 +665,7 @@ I'll create a comprehensive README.md file for the Qwen Code Web UI project with
           type: "assistant" as const,
           delay: 1800,
           data: createToolUseMessage(
-            "Read",
+            TOOL_NAMES.READ,
             { file_path: "/Users/demo/claude-code-webui/package.json" },
             "demo-session-plan",
             "read-package-json",
@@ -682,7 +683,7 @@ I'll create a comprehensive README.md file for the Qwen Code Web UI project with
           type: "assistant" as const,
           delay: 1600,
           data: createToolUseMessage(
-            "Write",
+            TOOL_NAMES.WRITE,
             {
               file_path: "/Users/demo/claude-code-webui/README.md",
               content: `# Qwen Code Web UI

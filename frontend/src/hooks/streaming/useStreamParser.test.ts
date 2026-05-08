@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { useStreamParser } from "./useStreamParser";
 import type { StreamingContext } from "./useMessageProcessor";
 import { generateId } from "../../utils/id";
+import { TOOL_NAMES } from "../../utils/toolNames";
 
 // Mock dependencies
 
@@ -43,7 +44,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-123",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {
                 plan: "Let's implement a new feature:\n\n1. Add UI component\n2. Connect to API\n3. Write tests",
               },
@@ -89,7 +90,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-456",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {},
             },
           ],
@@ -133,7 +134,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-789",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {},
             },
           ],
@@ -177,7 +178,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {
                 plan: "Test plan content",
               },
@@ -223,7 +224,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-invalid",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {
                 plan: { invalid: "object" }, // Non-string content
               },
@@ -269,7 +270,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "bash-123",
-              name: "Bash",
+              name: TOOL_NAMES.BASH,
               input: {
                 command: "ls -la",
               },
@@ -415,7 +416,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-mixed",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: {
                 plan: "1. Analyze requirements\n2. Design solution\n3. Implement",
               },
@@ -465,13 +466,13 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "bash-123",
-              name: "Bash",
+              name: TOOL_NAMES.BASH,
               input: { command: "ls" },
             },
             {
               type: "tool_use" as const,
               id: "plan-multi",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: { plan: "Multi-tool plan" },
             },
           ],
@@ -529,7 +530,7 @@ describe("useStreamParser", () => {
             {
               type: "tool_use" as const,
               id: "plan-session",
-              name: "ExitPlanMode",
+              name: TOOL_NAMES.EXIT_PLAN_MODE,
               input: { plan: "Plan with session tracking" },
             },
           ],

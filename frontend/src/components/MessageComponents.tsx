@@ -13,6 +13,7 @@ import { TimestampComponent } from "./TimestampComponent";
 import { MessageContainer } from "./messages/MessageContainer";
 import { CollapsibleDetails } from "./messages/CollapsibleDetails";
 import { MESSAGE_CONSTANTS } from "../utils/constants";
+import { TOOL_NAMES } from "../utils/toolNames";
 import {
   createEditResult,
   createBashPreview,
@@ -187,7 +188,7 @@ export function ToolResultMessageComponent({
   let defaultExpanded = false;
 
   // Handle Edit tool results with structuredPatch
-  if (message.toolName === "Edit" && isEditToolUseResult(toolUseResult)) {
+  if (message.toolName === TOOL_NAMES.EDIT && isEditToolUseResult(toolUseResult)) {
     const editResult = createEditResult(
       toolUseResult.structuredPatch,
       message.content,
@@ -201,7 +202,7 @@ export function ToolResultMessageComponent({
   }
 
   // Handle Bash tool results with stdout/stderr
-  else if (message.toolName === "Bash" && isBashToolUseResult(toolUseResult)) {
+  else if (message.toolName === TOOL_NAMES.BASH && isBashToolUseResult(toolUseResult)) {
     const isError = Boolean(toolUseResult.stderr?.trim());
     const bashPreview = createBashPreview(
       toolUseResult.stdout || "",
@@ -216,7 +217,7 @@ export function ToolResultMessageComponent({
 
   // Handle specific tool results that benefit from content preview
   // Note: Read tool should NOT show preview, only line counts in summary
-  else if (message.toolName === "Grep" && message.content.trim().length > 0) {
+  else if (message.toolName === TOOL_NAMES.GREP && message.content.trim().length > 0) {
     const contentPreview = createContentPreview(message.content, 5);
     if (contentPreview.hasMore) {
       previewContent = contentPreview.preview;
@@ -225,15 +226,15 @@ export function ToolResultMessageComponent({
 
   // Determine if preview should be shown for this tool
   const shouldShowPreview =
-    message.toolName === "Bash" ||
-    message.toolName === "Edit" ||
-    message.toolName === "Grep";
+    message.toolName === TOOL_NAMES.BASH ||
+    message.toolName === TOOL_NAMES.EDIT ||
+    message.toolName === TOOL_NAMES.GREP;
 
   return (
     <CollapsibleDetails
       label={message.toolName}
       details={displayContent}
-      badge={message.toolName === "Edit" ? undefined : message.summary}
+      badge={message.toolName === TOOL_NAMES.EDIT ? undefined : message.summary}
       icon={<span className="bg-emerald-400 dark:bg-emerald-500">✓</span>}
       colorScheme={{
         header: "text-emerald-800 dark:text-emerald-300",

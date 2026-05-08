@@ -10,6 +10,7 @@ import {
 } from "../utils/mockResponseGenerator";
 import type { SDKMessage } from "../types";
 import { formatToolArguments } from "../utils/toolUtils";
+import { TOOL_NAMES } from "../utils/toolNames";
 import { createToolResultMessage } from "../utils/messageConversion";
 
 export interface DemoAutomationHook {
@@ -267,7 +268,7 @@ export function useDemoAutomation(
               }
 
               // Special handling for ExitPlanMode - create plan message instead of tool message
-              if (toolUse.name === "ExitPlanMode") {
+              if (toolUse.name === TOOL_NAMES.EXIT_PLAN_MODE) {
                 const planContent = (toolUse.input?.plan as string) || "";
                 const planMessage = {
                   type: "plan" as const,
@@ -320,8 +321,8 @@ export function useDemoAutomation(
                     // For now, trigger regular permission request with ExitPlanMode pattern
                     // The ChatPage.tsx logic will convert this to plan mode request
                     finalShowPermissionRequest(
-                      "ExitPlanMode",
-                      ["ExitPlanMode"],
+                      TOOL_NAMES.EXIT_PLAN_MODE,
+                      [TOOL_NAMES.EXIT_PLAN_MODE],
                       toolResult.tool_use_id,
                     );
                   } else {

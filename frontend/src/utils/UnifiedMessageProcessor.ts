@@ -16,6 +16,7 @@ import {
 import { isThinkingContentItem } from "./messageTypes";
 import type { ThinkingTimeoutContext } from "../hooks/streaming/useMessageProcessor";
 import { extractToolInfo, generateToolPatterns } from "./toolUtils";
+import { TOOL_NAMES } from "./toolNames";
 import type { CommandLoopRequest } from "../hooks/chat/usePermissions";
 
 /**
@@ -246,7 +247,7 @@ export class UnifiedMessageProcessor {
     }
 
     // Don't show tool_result for TodoWrite since we already show TodoMessage from tool_use
-    if (toolName === "TodoWrite") {
+    if (toolName === TOOL_NAMES.TODO_WRITE) {
       return;
     }
 
@@ -369,7 +370,7 @@ export class UnifiedMessageProcessor {
     }
 
     // Special handling for ExitPlanMode - create plan message instead of tool message
-    if (contentItem.name === "ExitPlanMode") {
+    if (contentItem.name === TOOL_NAMES.EXIT_PLAN_MODE) {
       const inputObj = contentItem.input as { plan?: string } | undefined;
       const planContent = inputObj?.plan || "";
       const planMessage = {
@@ -379,7 +380,7 @@ export class UnifiedMessageProcessor {
         timestamp: options.timestamp || Date.now(),
       };
       context.addMessage(planMessage);
-    } else if (contentItem.name === "TodoWrite") {
+    } else if (contentItem.name === TOOL_NAMES.TODO_WRITE) {
       // Special handling for TodoWrite - create todo message from input
       const todoMessage = createTodoMessageFromInput(
         (contentItem.input as Record<string, unknown>) || {},

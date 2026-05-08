@@ -16,6 +16,7 @@ import { useAbortController } from "../hooks/chat/useAbortController";
 import { sendPermissionResponse } from "../hooks/chat/useAbortController";
 import type { ThinkingTimeoutContext } from "../hooks/streaming/useMessageProcessor";
 import { extractToolInfo, generateToolPatterns } from "../utils/toolUtils";
+import { TOOL_NAMES } from "../utils/toolNames";
 import { useAutoHistoryLoader } from "../hooks/useHistoryLoader";
 import { useSettings } from "../hooks/useSettings";
 import { useExpandThinking } from "../hooks/useSettings";
@@ -507,7 +508,7 @@ export function ChatPage() {
     (toolName: string, patterns: string[], toolUseId: string, requestId?: string) => {
       notificationTriggeredRef.current = true;
       // Check if this is an ExitPlanMode permission error
-      if (patterns.includes("ExitPlanMode")) {
+      if (patterns.includes(TOOL_NAMES.EXIT_PLAN_MODE)) {
         // For ExitPlanMode, show plan permission interface instead of regular permission
         showPlanModeRequest(""); // Empty plan content since it was already displayed
         // Show tab notification for plan approval

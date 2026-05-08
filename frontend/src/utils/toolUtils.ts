@@ -1,4 +1,5 @@
 import { TOOL_CONSTANTS } from "./constants";
+import { TOOL_NAMES } from "./toolNames";
 
 // Extract tool name and commands from previous context
 export function extractToolInfo(
@@ -13,19 +14,19 @@ export function extractToolInfo(
 
   // For Bash tool, parse command details
   if (
-    extractedToolName === "Bash" &&
+    extractedToolName === TOOL_NAMES.BASH &&
     input?.command &&
     typeof input.command === "string"
   ) {
     commands = extractBashCommands(input.command);
-  } else if (extractedToolName === "ExitPlanMode") {
-    commands = ["ExitPlanMode"];
+  } else if (extractedToolName === TOOL_NAMES.EXIT_PLAN_MODE) {
+    commands = [TOOL_NAMES.EXIT_PLAN_MODE];
   } else {
     commands = [TOOL_CONSTANTS.WILDCARD_COMMAND];
   }
 
   // Ensure commands is never empty for non-Bash tools
-  if (extractedToolName !== "Bash" && commands.length === 0) {
+  if (extractedToolName !== TOOL_NAMES.BASH && commands.length === 0) {
     commands = [TOOL_CONSTANTS.WILDCARD_COMMAND];
   }
 
@@ -93,7 +94,7 @@ export function generateToolPatterns(
   toolName: string,
   commands: string[],
 ): string[] {
-  if (toolName !== "Bash") {
+  if (toolName !== TOOL_NAMES.BASH) {
     return [toolName];
   }
 
@@ -107,7 +108,7 @@ export function generateToolPatterns(
 
 // Generate single tool pattern for backward compatibility
 export function generateToolPattern(toolName: string, command: string): string {
-  return toolName === "Bash" && command !== TOOL_CONSTANTS.WILDCARD_COMMAND
+  return toolName === TOOL_NAMES.BASH && command !== TOOL_CONSTANTS.WILDCARD_COMMAND
     ? `${toolName}(${command}:*)`
     : toolName;
 }

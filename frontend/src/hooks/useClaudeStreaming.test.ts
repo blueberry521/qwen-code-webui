@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { useClaudeStreaming } from "./useClaudeStreaming";
 import type { SDKMessage } from "../types";
 import { generateId } from "../utils/id";
+import { TOOL_NAMES } from "../utils/toolNames";
 
 describe("useClaudeStreaming", () => {
   it("does not extract session_id from system messages", () => {
@@ -25,7 +26,7 @@ describe("useClaudeStreaming", () => {
       cwd: "/test",
       session_id: "test-session-123",
       uuid: generateId(),
-      tools: ["Bash"],
+      tools: [TOOL_NAMES.BASH],
       mcp_servers: [],
       model: "qwen3-coder-plus",
       permission_mode: "default",
@@ -191,7 +192,7 @@ describe("useClaudeStreaming", () => {
       cwd: "/test",
       session_id: "test-session-123",
       uuid: generateId(),
-      tools: ["Bash"],
+      tools: [TOOL_NAMES.BASH],
       mcp_servers: [],
       model: "qwen3-coder-plus",
       permission_mode: "default",
@@ -324,7 +325,7 @@ describe("useClaudeStreaming", () => {
           {
             type: "tool_use",
             id: "tool_123",
-            name: "Bash",
+            name: TOOL_NAMES.BASH,
             input: { command: "ls -la" },
           },
         ],
@@ -347,7 +348,7 @@ describe("useClaudeStreaming", () => {
     expect(mockContext.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "tool",
-        content: "Bash(ls -la)",
+        content: `${TOOL_NAMES.BASH}(ls -la)`,
         timestamp: expect.any(Number),
       }),
     );

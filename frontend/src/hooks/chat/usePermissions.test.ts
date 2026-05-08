@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { usePermissions, type CommandLoopRequest } from "./usePermissions";
+import { TOOL_NAMES } from "../../utils/toolNames";
 
 describe("usePermissions", () => {
   it("should initialize with empty allowed tools", () => {
@@ -13,13 +14,13 @@ describe("usePermissions", () => {
     const { result } = renderHook(() => usePermissions());
 
     act(() => {
-      result.current.showPermissionRequest("Bash", ["Bash(ls:*)"], "tool-123");
+      result.current.showPermissionRequest(TOOL_NAMES.BASH, [`${TOOL_NAMES.BASH}(ls:*)`], "tool-123");
     });
 
     expect(result.current.permissionRequest).toEqual({
       isOpen: true,
-      toolName: "Bash",
-      patterns: ["Bash(ls:*)"],
+      toolName: TOOL_NAMES.BASH,
+      patterns: [`${TOOL_NAMES.BASH}(ls:*)`],
       toolUseId: "tool-123",
     });
   });
@@ -28,7 +29,7 @@ describe("usePermissions", () => {
     const { result } = renderHook(() => usePermissions());
 
     act(() => {
-      result.current.showPermissionRequest("Bash", ["Bash(ls:*)"], "tool-123");
+      result.current.showPermissionRequest(TOOL_NAMES.BASH, [`${TOOL_NAMES.BASH}(ls:*)`], "tool-123");
     });
 
     act(() => {
@@ -44,10 +45,10 @@ describe("usePermissions", () => {
     let tempAllowedTools: string[] = [];
 
     act(() => {
-      tempAllowedTools = result.current.allowToolTemporary("Bash(ls:*)");
+      tempAllowedTools = result.current.allowToolTemporary(`${TOOL_NAMES.BASH}(ls:*)`);
     });
 
-    expect(tempAllowedTools).toEqual(["Bash(ls:*)"]);
+    expect(tempAllowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`]);
     // Should not update permanent allowed tools
     expect(result.current.allowedTools).toEqual([]);
   });
@@ -58,11 +59,11 @@ describe("usePermissions", () => {
     let updatedAllowedTools: string[] = [];
 
     act(() => {
-      updatedAllowedTools = result.current.allowToolPermanent("Bash(ls:*)");
+      updatedAllowedTools = result.current.allowToolPermanent(`${TOOL_NAMES.BASH}(ls:*)`);
     });
 
-    expect(updatedAllowedTools).toEqual(["Bash(ls:*)"]);
-    expect(result.current.allowedTools).toEqual(["Bash(ls:*)"]);
+    expect(updatedAllowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`]);
+    expect(result.current.allowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`]);
   });
 
   it("should allow multiple tools with base tools parameter", () => {
@@ -72,19 +73,19 @@ describe("usePermissions", () => {
 
     // First add one tool permanently
     act(() => {
-      updatedAllowedTools = result.current.allowToolPermanent("Bash(ls:*)");
+      updatedAllowedTools = result.current.allowToolPermanent(`${TOOL_NAMES.BASH}(ls:*)`);
     });
 
     // Then add another with base tools
     act(() => {
       updatedAllowedTools = result.current.allowToolPermanent(
-        "Bash(grep:*)",
+        `${TOOL_NAMES.BASH}(grep:*)`,
         updatedAllowedTools,
       );
     });
 
-    expect(updatedAllowedTools).toEqual(["Bash(ls:*)", "Bash(grep:*)"]);
-    expect(result.current.allowedTools).toEqual(["Bash(ls:*)", "Bash(grep:*)"]);
+    expect(updatedAllowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`]);
+    expect(result.current.allowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`]);
   });
 
   it("should reset permissions", () => {
@@ -92,14 +93,14 @@ describe("usePermissions", () => {
 
     // Add some tools first
     act(() => {
-      result.current.allowToolPermanent("Bash(ls:*)");
+      result.current.allowToolPermanent(`${TOOL_NAMES.BASH}(ls:*)`);
     });
 
     act(() => {
-      result.current.allowToolPermanent("Bash(grep:*)");
+      result.current.allowToolPermanent(`${TOOL_NAMES.BASH}(grep:*)`);
     });
 
-    expect(result.current.allowedTools).toEqual(["Bash(ls:*)", "Bash(grep:*)"]);
+    expect(result.current.allowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`]);
 
     // Reset permissions
     act(() => {
@@ -113,7 +114,7 @@ describe("usePermissions", () => {
     const { result } = renderHook(() => usePermissions());
 
     // Simulate compound command permission handling
-    const patterns = ["Bash(ls:*)", "Bash(grep:*)"];
+    const patterns = [`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`];
     let finalAllowedTools: string[] = [];
 
     act(() => {
@@ -125,20 +126,20 @@ describe("usePermissions", () => {
       finalAllowedTools = currentTools;
     });
 
-    expect(finalAllowedTools).toEqual(["Bash(ls:*)", "Bash(grep:*)"]);
-    expect(result.current.allowedTools).toEqual(["Bash(ls:*)", "Bash(grep:*)"]);
+    expect(finalAllowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`]);
+    expect(result.current.allowedTools).toEqual([`${TOOL_NAMES.BASH}(ls:*)`, `${TOOL_NAMES.BASH}(grep:*)`]);
   });
 
   it("should handle empty patterns array gracefully", () => {
     const { result } = renderHook(() => usePermissions());
 
     act(() => {
-      result.current.showPermissionRequest("Bash", [], "tool-123");
+      result.current.showPermissionRequest(TOOL_NAMES.BASH, [], "tool-123");
     });
 
     expect(result.current.permissionRequest).toEqual({
       isOpen: true,
-      toolName: "Bash",
+      toolName: TOOL_NAMES.BASH,
       patterns: [],
       toolUseId: "tool-123",
     });
@@ -148,16 +149,16 @@ describe("usePermissions", () => {
     const { result } = renderHook(() => usePermissions());
 
     // Simulate command -v case where fallback should provide command pattern
-    const patterns = ["Bash(command:*)"];
+    const patterns = [`${TOOL_NAMES.BASH}(command:*)`];
 
     act(() => {
-      result.current.showPermissionRequest("Bash", patterns, "tool-123");
+      result.current.showPermissionRequest(TOOL_NAMES.BASH, patterns, "tool-123");
     });
 
     expect(result.current.permissionRequest).toEqual({
       isOpen: true,
-      toolName: "Bash",
-      patterns: ["Bash(command:*)"],
+      toolName: TOOL_NAMES.BASH,
+      patterns: [`${TOOL_NAMES.BASH}(command:*)`],
       toolUseId: "tool-123",
     });
   });
@@ -170,7 +171,7 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
     let loopMessage: string | null = null;
 
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).toBeNull();
@@ -180,12 +181,12 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
     const { result } = renderHook(() => usePermissions());
 
     act(() => {
-      result.current.recordDenial("Bash");
+      result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     let loopMessage: string | null = null;
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).toBeNull();
@@ -194,12 +195,12 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
   it("should detect loop on third consecutive denial of same tool", () => {
     const { result } = renderHook(() => usePermissions());
 
-    act(() => { result.current.recordDenial("Bash"); });
-    act(() => { result.current.recordDenial("Bash"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
 
     let loopMessage: string | null = null;
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).not.toBeNull();
@@ -209,16 +210,16 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
   it("should reset counter for different tool denial", () => {
     const { result } = renderHook(() => usePermissions());
 
-    act(() => { result.current.recordDenial("Bash"); });
-    act(() => { result.current.recordDenial("Bash"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
 
     // Different tool resets counter
-    act(() => { result.current.recordDenial("Write"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.WRITE); });
 
     // Back to Bash - counter should be 1
     let loopMessage: string | null = null;
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).toBeNull();
@@ -227,14 +228,14 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
   it("should reset counter when resetDenialCounter is called", () => {
     const { result } = renderHook(() => usePermissions());
 
-    act(() => { result.current.recordDenial("Bash"); });
-    act(() => { result.current.recordDenial("Bash"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
 
     act(() => { result.current.resetDenialCounter(); });
 
     let loopMessage: string | null = null;
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).toBeNull();
@@ -257,15 +258,15 @@ describe("usePermissions - Permission Denial Loop Detection", () => {
     const { result } = renderHook(() => usePermissions());
 
     // Trigger once
-    act(() => { result.current.recordDenial("Bash"); });
-    act(() => { result.current.recordDenial("Bash"); });
-    act(() => { result.current.recordDenial("Bash"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
 
     // Should be reset now, so 2 more denials should not trigger
     let loopMessage: string | null = null;
-    act(() => { result.current.recordDenial("Bash"); });
+    act(() => { result.current.recordDenial(TOOL_NAMES.BASH); });
     act(() => {
-      loopMessage = result.current.recordDenial("Bash");
+      loopMessage = result.current.recordDenial(TOOL_NAMES.BASH);
     });
 
     expect(loopMessage).toBeNull();
