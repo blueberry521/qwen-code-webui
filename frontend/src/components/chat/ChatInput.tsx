@@ -17,8 +17,10 @@ import { formatTokenCount } from "../../utils/tokenUsage";
 interface PermissionData {
   patterns: string[];
   toolName?: string;
+  toolInput?: Record<string, unknown>;
   onAllow: () => void;
   onAllowPermanent: () => void;
+  onAllowAll?: () => void;
   onDeny: () => void;
   getButtonClassName?: (
     buttonType: "allow" | "allowPermanent" | "deny",
@@ -363,8 +365,10 @@ export function ChatInput({
       <PermissionInputPanel
         patterns={permissionData.patterns}
         toolName={permissionData.toolName}
+        toolInput={permissionData.toolInput}
         onAllow={permissionData.onAllow}
         onAllowPermanent={permissionData.onAllowPermanent}
+        onAllowAll={permissionData.onAllowAll}
         onDeny={permissionData.onDeny}
         getButtonClassName={permissionData.getButtonClassName}
         onSelectionChange={permissionData.onSelectionChange}

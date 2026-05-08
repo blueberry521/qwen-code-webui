@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import type { PermissionMode } from "../../types";
+import { STORAGE_KEYS, getStorageItem, setStorageItem, removeStorageItem } from "../../utils/storage";
 
 interface PermissionRequest {
   isOpen: boolean;
@@ -86,7 +87,9 @@ Do not attempt to call the same tool again without user confirmation.`;
 
 export function usePermissions(options: UsePermissionsOptions = {}) {
   const { onPermissionModeChange } = options;
-  const [allowedTools, setAllowedTools] = useState<string[]>([]);
+  const [allowedTools, setAllowedTools] = useState<string[]>(() =>
+    getStorageItem<string[]>(STORAGE_KEYS.ALLOWED_TOOLS, []),
+  );
   const [permissionRequest, setPermissionRequest] =
     useState<PermissionRequest | null>(null);
   const permissionRequestRef = useRef<PermissionRequest | null>(null);
@@ -175,6 +178,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       const currentAllowedTools = baseTools || allowedTools;
       const updatedAllowedTools = [...currentAllowedTools, pattern];
       setAllowedTools(updatedAllowedTools);
+      setStorageItem(STORAGE_KEYS.ALLOWED_TOOLS, updatedAllowedTools);
       return updatedAllowedTools;
     },
     [allowedTools],
@@ -182,6 +186,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
 
   const resetPermissions = useCallback(() => {
     setAllowedTools([]);
+    removeStorageItem(STORAGE_KEYS.ALLOWED_TOOLS);
   }, []);
 
   // Helper function to update permission mode based on user action

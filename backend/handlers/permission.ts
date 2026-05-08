@@ -1,13 +1,10 @@
 import { Context } from "hono";
 import type { PermissionRespondRequest } from "../../shared/types.ts";
+import type { PermissionResult } from "@qwen-code/sdk";
 import { logger } from "../utils/logger.ts";
 
 export interface PendingPermission {
-  resolve: (result: {
-    behavior: "allow" | "deny";
-    updatedInput?: Record<string, unknown>;
-    message?: string;
-  }) => void;
+  resolve: (result: PermissionResult, scope?: "specific" | "all") => void;
   abortSignal: AbortSignal;
 }
 
@@ -41,7 +38,7 @@ export async function handlePermissionRespond(
     pending.resolve({
       behavior: "allow",
       updatedInput: body.updatedInput || {},
-    });
+    }, body.scope);
   } else {
     const message = body.message
       ? `${body.message} [proactive]`

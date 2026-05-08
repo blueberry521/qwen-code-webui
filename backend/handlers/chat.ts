@@ -1,5 +1,5 @@
 import { Context } from "hono";
-import { query, type PermissionMode, type AuthType } from "@qwen-code/sdk";
+import { query, type PermissionMode, type AuthType, type PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
@@ -29,7 +29,14 @@ function mapPermissionMode(mode?: string): PermissionMode | undefined {
  * Tool names use snake_case to match the SDK's canUseTool callback format.
  * See qwen-code-cli/packages/core/src/tools/tool-names.ts for the canonical list.
  */
+// Tools that are safe to auto-approve without user confirmation.
+// Criteria: no side effects, no writes to filesystem or external systems.
+// Update this set when new read-only SDK tools are added.
 const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_directory"]);
+
+function extractBaseCommand(command: string): string {
+  return command.trim().split(/\s+/)[0] || "";
+}
 
 /**
  * Executes a Qwen command and sends StreamResponse objects via the provided enqueue callback.
@@ -102,18 +109,31 @@ async function executeQwenCommand(
       toolName: string,
       input: Record<string, unknown>,
       _options: { signal: AbortSignal; suggestions?: unknown[] | null },
-    ): Promise<{ behavior: "allow" | "deny"; updatedInput?: Record<string, unknown>; message?: string }> => {
+    ): Promise<PermissionResult> => {
       // Defense 1: check main query abort (not SDK's per-request signal)
       if (abortController.signal.aborted) {
         return { behavior: "deny", message: "Request aborted" };
       }
 
-      // Auto-approve read-only tools the user already allowed during this request.
-      // High-risk tools (write_file, edit, run_shell_command, etc.) always require
-      // per-call confirmation regardless of prior approval.
+      // Read-only tools never require confirmation — skip the dialog entirely.
+      if (READ_ONLY_TOOLS.has(toolName)) {
+        logger.chat.debug("canUseTool: auto-approving read-only tool {toolName}", { toolName });
+        return { behavior: "allow", updatedInput: input };
+      }
+
+      // Auto-approve write tools the user already allowed during this request.
       if (localAllowedTools.has(toolName)) {
         logger.chat.debug("canUseTool: auto-approving previously allowed tool {toolName}", { toolName });
         return { behavior: "allow", updatedInput: input };
+      }
+
+      // For run_shell_command, also check command-specific entries.
+      if (toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
+        const baseCmd = extractBaseCommand(input.command as string);
+        if (baseCmd && localAllowedTools.has(`${toolName}:${baseCmd}`)) {
+          logger.chat.debug("canUseTool: auto-approving previously allowed command {toolName}:{baseCmd}", { toolName, baseCmd });
+          return { behavior: "allow", updatedInput: input };
+        }
       }
 
       const permissionId = crypto.randomUUID();
@@ -156,13 +176,16 @@ async function executeQwenCommand(
         abortController.signal.addEventListener("abort", onAbort, { once: true });
 
         pendingPermissions.set(permissionId, {
-          resolve: (result) => {
+          resolve: (result, scope) => {
             abortController.signal.removeEventListener("abort", onAbort);
             localPendingIds.delete(permissionId);
-            // Only remember read-only tools for auto-approve; high-risk tools
-            // always require per-call user confirmation.
-            if (result.behavior === "allow" && READ_ONLY_TOOLS.has(toolName)) {
-              localAllowedTools.add(toolName);
+            if (result.behavior === "allow") {
+              if (scope === "specific" && toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
+                const baseCmd = extractBaseCommand(input.command as string);
+                if (baseCmd) localAllowedTools.add(`${toolName}:${baseCmd}`);
+              } else {
+                localAllowedTools.add(toolName);
+              }
             }
             resolve(result);
           },
@@ -183,7 +206,7 @@ async function executeQwenCommand(
         ...(model ? { model } : {}),
         ...(authType ? { authType } : {}),
         canUseTool,
-        timeout: { canUseTool: 300_000 },
+        timeout: { canUseTool: 86_400_000 },
       },
     })) {
       messageCount++;

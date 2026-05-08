@@ -50,7 +50,7 @@ describe("handleDeleteProjectRequest", () => {
   it("should reject path traversal with ..", async () => {
     const c = createMockContext("..");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Invalid project name");
   });
 
@@ -59,7 +59,7 @@ describe("handleDeleteProjectRequest", () => {
     // This is NOT a traversal — it's a valid (though unusual) directory name
     const c = createMockContext("..other");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { success: boolean } };
+    const response = result as unknown as { data: { success: boolean } };
     // Stat mock returns isDirectory: true, so it succeeds
     expect(response.data.success).toBe(true);
   });
@@ -74,35 +74,35 @@ describe("handleDeleteProjectRequest", () => {
   it("should reject pure parent directory traversal", async () => {
     const c = createMockContext("..");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Invalid project name");
   });
 
   it("should reject empty project name", async () => {
     const c = createMockContext("");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Project name is required");
   });
 
   it("should reject project name with slashes", async () => {
     const c = createMockContext("foo/bar");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Invalid project name");
   });
 
   it("should reject project name with backslashes", async () => {
     const c = createMockContext("foo\\bar");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Invalid project name");
   });
 
   it("should allow and successfully delete a valid project", async () => {
     const c = createMockContext("-home-testuser-my-project");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { success: boolean; message: string } };
+    const response = result as unknown as { data: { success: boolean; message: string } };
     expect(response.data.success).toBe(true);
     expect(mockRemove).toHaveBeenCalledWith(
       "/home/testuser/.qwen/projects/-home-testuser-my-project",
@@ -113,7 +113,7 @@ describe("handleDeleteProjectRequest", () => {
     mockStat.mockRejectedValue(new Error("not found"));
     const c = createMockContext("-home-testuser-nonexistent");
     const result = await handleDeleteProjectRequest(c);
-    const response = result as { data: { error: string }; status?: number };
+    const response = result as unknown as { data: { error: string }; status?: number };
     expect(response.data.error).toBe("Project not found");
   });
 });

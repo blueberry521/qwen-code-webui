@@ -5,6 +5,7 @@ import {
   BeakerIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../hooks/useSettings";
@@ -15,7 +16,12 @@ const languages = [
   { code: "zh-CN", name: "Chinese (Simplified)", nativeName: "简体中文" },
 ];
 
-export function GeneralSettings() {
+interface GeneralSettingsProps {
+  allowedTools?: string[];
+  onResetPermissions?: () => void;
+}
+
+export function GeneralSettings({ allowedTools = [], onResetPermissions }: GeneralSettingsProps) {
   const { t, i18n } = useTranslation();
   const {
     theme,
@@ -244,6 +250,36 @@ export function GeneralSettings() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Reset Permissions */}
+      <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+        <h3 className="text-lg font-medium text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+          <ArrowPathIcon className="w-5 h-5 text-amber-500" />
+          {t("permission.reset")}
+        </h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+          {t("permission.resetDescription")}
+        </p>
+        {allowedTools.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {allowedTools.map((tool) => (
+              <span
+                key={tool}
+                className="font-mono text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded"
+              >
+                {tool}
+              </span>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={onResetPermissions}
+          disabled={allowedTools.length === 0 || !onResetPermissions}
+          className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:dark:bg-slate-700 disabled:text-slate-400 disabled:dark:text-slate-500 disabled:border-slate-200 disabled:dark:border-slate-600 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 enabled:cursor-pointer"
+        >
+          {t("permission.reset")}
+        </button>
       </div>
 
       {/* Version Info */}

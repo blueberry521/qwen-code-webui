@@ -438,6 +438,8 @@ export function ChatPage() {
     closeCommandLoopRequest,
     // Auto-rejection loop detection
     recordAutoRejection,
+    // Reset all permanently allowed tools
+    resetPermissions,
   } = usePermissions({
     onPermissionModeChange: setPermissionMode,
   });
@@ -814,9 +816,17 @@ export function ChatPage() {
 
     // Proactive canUseTool flow — stream still open, just respond
     if (permissionRequest.permissionId) {
+      // For shell tools, persist pattern to localStorage; for non-shell, only this request
+      const isShell = permissionRequest.toolName === "run_shell_command";
+      if (isShell) {
+        permissionRequest.patterns.forEach((pattern) => {
+          allowToolPermanent(pattern, allowedTools);
+        });
+      }
       try {
         const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
           updatedInput: permissionRequest.toolInput || {},
+          ...(isShell ? { scope: "specific" as const } : {}),
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
@@ -914,6 +924,48 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+  ]);
+
+  // "Allow all run_shell_command" — persist bare tool name for broad approval
+  const handlePermissionAllowAll = useCallback(async () => {
+    if (!permissionRequest) return;
+
+    resetDenialCounter();
+    clearNotification();
+
+    if (permissionRequest.permissionId) {
+      // Persist bare tool name so ALL run_shell_command calls are auto-approved
+      allowToolPermanent(permissionRequest.toolName, allowedTools);
+      try {
+        const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
+          updatedInput: permissionRequest.toolInput || {},
+          scope: "all",
+        });
+        if (!resp.ok) {
+          console.warn("Permission response failed:", resp.status);
+        }
+      } catch (error) {
+        console.error("Failed to send permission response:", error);
+      }
+      closePermissionRequest();
+      return;
+    }
+
+    // Legacy reactive flow
+    const updatedAllowedTools = allowToolPermanent(permissionRequest.toolName, allowedTools);
+    closePermissionRequest();
+    if (currentSessionId) {
+      sendMessage("continue", updatedAllowedTools, true);
+    }
+  }, [
+    permissionRequest,
+    currentSessionId,
+    sendMessage,
+    allowedTools,
+    allowToolPermanent,
+    closePermissionRequest,
+    resetDenialCounter,
+    clearNotification,
   ]);
 
   const handlePermissionDeny = useCallback(async () => {
@@ -1073,8 +1125,10 @@ export function ChatPage() {
     ? {
         patterns: permissionRequest.patterns,
         toolName: permissionRequest.toolName,
+        toolInput: permissionRequest.toolInput,
         onAllow: handlePermissionAllow,
         onAllowPermanent: handlePermissionAllowPermanent,
+        onAllowAll: handlePermissionAllowAll,
         onDeny: handlePermissionDeny,
       }
     : undefined;
@@ -1503,7 +1557,7 @@ export function ChatPage() {
         )}
 
         {/* Settings Modal */}
-        <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} />
+        <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} allowedTools={allowedTools} onResetPermissions={resetPermissions} />
 
         {/* Clear Conversation Confirmation Modal */}
         <ConfirmModal

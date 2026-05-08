@@ -108,11 +108,15 @@
     "wantsToUse": "Qwen 想要使用 {{command}} 命令。",
     "wantsToUseMultiple": "Qwen 想要使用以下命令：",
     "proceedHint": "是否允许执行？（按 ESC 拒绝，按 Enter 确认）",
-    "yes": "允许",
+    "yesThisRequest": "允许本次",
     "yesPermanent": "允许，且不再询问 {{commands}} 命令",
     "yesPermanentMulti": "允许，且不再询问 {{commands}} 命令",
     "no": "拒绝",
-    "bashCommands": "bash 命令"
+    "bashCommands": "bash 命令",
+    "reset": "重置权限",
+    "resetDescription": "清除所有已记住的工具权限。下次使用工具时将重新请求确认。",
+    "allowSpecific": "仅允许 {{command}}",
+    "allowAll": "允许 {{command}}，且不再询问 run_shell_command 的任何命令"
   },
   "quota": {
     "exceeded": "配额已超限",

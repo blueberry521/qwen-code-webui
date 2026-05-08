@@ -8,6 +8,8 @@ export const STORAGE_KEYS = {
   THEME: "qwen-code-webui-theme",
   ENTER_BEHAVIOR: "qwen-code-webui-enter-behavior",
   PERMISSION_MODE: "qwen-code-webui-permission-mode",
+  // Session-persistent allowed tools
+  ALLOWED_TOOLS: "qwen-code-webui-allowed-tools",
 } as const;
 
 // Type-safe storage utilities
