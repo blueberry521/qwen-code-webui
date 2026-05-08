@@ -108,7 +108,6 @@
     "wantsToUse": "Qwen 想要使用 {{command}} 命令。",
     "wantsToUseMultiple": "Qwen 想要使用以下命令：",
     "proceedHint": "是否允许执行？（按 ESC 拒绝，按 Enter 确认）",
-    "yes": "允许",
     "yesThisRequest": "允许本次",
     "yesPermanent": "允许，且不再询问 {{commands}} 命令",
     "yesPermanentMulti": "允许，且不再询问 {{commands}} 命令",
