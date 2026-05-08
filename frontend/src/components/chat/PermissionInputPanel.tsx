@@ -95,7 +95,24 @@ function renderPermissionContent(patterns: string[], toolName: string | undefine
 }
 
 // Helper function to render button text for permanent permission
-function renderPermanentButtonText(patterns: string[], toolName: string | undefined, t: TFunction): string {
+// Shows the specific command/tool being approved to avoid ambiguity
+function renderPermanentButtonText(
+  patterns: string[],
+  toolName: string | undefined,
+  t: TFunction,
+  toolInput?: Record<string, unknown>,
+): string {
+  // For shell commands, show the specific command being approved
+  const specificCommand = toolInput?.command && typeof toolInput.command === "string"
+    ? toolInput.command.split(/\s+/)[0]
+    : null;
+
+  if (specificCommand) {
+    const displayName = toolName || t("permission.bashCommands");
+    const label = `${displayName}(${specificCommand})`;
+    return t("permission.yesPermanent", { commands: label });
+  }
+
   if (patterns.length === 0) {
     const displayName = toolName || t("permission.bashCommands");
     return t("permission.yesPermanent", { commands: displayName });
@@ -232,7 +249,7 @@ export function PermissionInputPanel({
           },
           {
             key: "allowPermanent" as Option,
-            label: renderPermanentButtonText(patterns, toolName, t),
+            label: renderPermanentButtonText(patterns, toolName, t, toolInput),
             action: onAllowPermanent,
           },
           {
