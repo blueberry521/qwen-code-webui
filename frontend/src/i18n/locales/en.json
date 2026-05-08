@@ -112,7 +112,9 @@
     "yesPermanent": "Yes, and don't ask again for {{commands}} command",
     "yesPermanentMulti": "Yes, and don't ask again for {{commands}} commands",
     "no": "No",
-    "bashCommands": "bash commands"
+    "bashCommands": "bash commands",
+    "reset": "Reset Permissions",
+    "resetDescription": "Clear all remembered tool permissions. You will be asked to confirm tools again."
   },
   "quota": {
     "exceeded": "Quota Exceeded",

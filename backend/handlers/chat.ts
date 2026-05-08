@@ -1,5 +1,5 @@
 import { Context } from "hono";
-import { query, type PermissionMode, type AuthType } from "@qwen-code/sdk";
+import { query, type PermissionMode, type AuthType, type PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
@@ -102,15 +102,19 @@ async function executeQwenCommand(
       toolName: string,
       input: Record<string, unknown>,
       _options: { signal: AbortSignal; suggestions?: unknown[] | null },
-    ): Promise<{ behavior: "allow" | "deny"; updatedInput?: Record<string, unknown>; message?: string }> => {
+    ): Promise<PermissionResult> => {
       // Defense 1: check main query abort (not SDK's per-request signal)
       if (abortController.signal.aborted) {
         return { behavior: "deny", message: "Request aborted" };
       }
 
-      // Auto-approve read-only tools the user already allowed during this request.
-      // High-risk tools (write_file, edit, run_shell_command, etc.) always require
-      // per-call confirmation regardless of prior approval.
+      // Read-only tools never require confirmation — skip the dialog entirely.
+      if (READ_ONLY_TOOLS.has(toolName)) {
+        logger.chat.debug("canUseTool: auto-approving read-only tool {toolName}", { toolName });
+        return { behavior: "allow", updatedInput: input };
+      }
+
+      // Auto-approve write tools the user already allowed during this request.
       if (localAllowedTools.has(toolName)) {
         logger.chat.debug("canUseTool: auto-approving previously allowed tool {toolName}", { toolName });
         return { behavior: "allow", updatedInput: input };
@@ -183,7 +187,7 @@ async function executeQwenCommand(
         ...(model ? { model } : {}),
         ...(authType ? { authType } : {}),
         canUseTool,
-        timeout: { canUseTool: 300_000 },
+        timeout: { canUseTool: Number.MAX_SAFE_INTEGER },
       },
     })) {
       messageCount++;

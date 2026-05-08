@@ -438,6 +438,8 @@ export function ChatPage() {
     closeCommandLoopRequest,
     // Auto-rejection loop detection
     recordAutoRejection,
+    // Reset all permanently allowed tools
+    resetPermissions,
   } = usePermissions({
     onPermissionModeChange: setPermissionMode,
   });
@@ -1073,6 +1075,7 @@ export function ChatPage() {
     ? {
         patterns: permissionRequest.patterns,
         toolName: permissionRequest.toolName,
+        toolInput: permissionRequest.toolInput,
         onAllow: handlePermissionAllow,
         onAllowPermanent: handlePermissionAllowPermanent,
         onDeny: handlePermissionDeny,
@@ -1503,7 +1506,7 @@ export function ChatPage() {
         )}
 
         {/* Settings Modal */}
-        <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} />
+        <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} allowedTools={allowedTools} onResetPermissions={resetPermissions} />
 
         {/* Clear Conversation Confirmation Modal */}
         <ConfirmModal

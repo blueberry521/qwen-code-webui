@@ -5,9 +5,11 @@ import { GeneralSettings } from "./settings/GeneralSettings";
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  allowedTools: string[];
+  onResetPermissions: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, allowedTools, onResetPermissions }: SettingsModalProps) {
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
@@ -59,7 +61,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         {/* Content */}
         <div className="overflow-y-auto max-h-[calc(90vh-120px)]">
           <div className="p-6">
-            <GeneralSettings />
+            <GeneralSettings allowedTools={allowedTools} onResetPermissions={onResetPermissions} />
           </div>
         </div>
       </div>
