@@ -234,7 +234,7 @@ export function PermissionInputPanel({
         { key: "deny" as Option, label: t("permission.no"), action: onDeny },
       ]
     : [
-        { key: "allow" as Option, label: t("permission.yes"), action: onAllow },
+        { key: "allow" as Option, label: t("permission.yesThisRequest"), action: onAllow },
         { key: "allowPermanent" as Option, label: renderPermanentButtonText(patterns, toolName, t, toolInput), action: onAllowPermanent },
         { key: "deny" as Option, label: t("permission.no"), action: onDeny },
       ];

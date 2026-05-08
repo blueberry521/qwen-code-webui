@@ -109,6 +109,7 @@
     "wantsToUseMultiple": "Qwen wants to use the following commands:",
     "proceedHint": "Do you want to proceed? (Press ESC to deny, Enter to confirm)",
     "yes": "Yes",
+    "yesThisRequest": "Allow this time",
     "yesPermanent": "Yes, and don't ask again for {{commands}} command",
     "yesPermanentMulti": "Yes, and don't ask again for {{commands}} commands",
     "no": "No",
