@@ -603,27 +603,21 @@ export function ChatPage() {
           } as ChatRequest),
         });
 
-        // Check for quota exceeded (403)
-        if (response.status === 403) {
+        // Handle non-200 responses (quota exceeded, auth errors, server errors, etc.)
+        if (!response.ok) {
           try {
             const errorData = await response.json();
-            if (errorData.error === "quota_exceeded") {
+            if (response.status === 403 && errorData.error === "quota_exceeded") {
               setIsQuotaExceeded(true);
               setQuotaErrorStatus(errorData.quota_status);
               resetRequestState();
               return;
             }
-          } catch { /* ignore parse error */ }
-        }
-
-        // Handle non-200 responses (409, 401, 500, etc.)
-        if (!response.ok) {
-          let errorMsg = `Server error: ${response.status}`;
-          try {
-            const errorData = await response.json();
-            if (errorData.error) errorMsg = String(errorData.error);
-          } catch { /* use default message */ }
-          throw new Error(errorMsg);
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+          } catch (e) {
+            if (e instanceof Error && e.message !== `Server error: ${response.status}`) throw e;
+            throw new Error(`Server error: ${response.status}`);
+          }
         }
 
         if (!response.body) throw new Error("No response body");
@@ -690,28 +684,39 @@ export function ChatPage() {
           },
         };
 
+        let lineBuffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done || shouldAbort) break;
 
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n").filter((line) => line.trim());
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split("\n");
+          lineBuffer = lines.pop() || "";
 
           for (const line of lines) {
+            if (!line.trim()) continue;
             if (shouldAbort) break;
             processStreamLine(line, streamingContext);
           }
 
           if (shouldAbort) break;
         }
+
+        // Process any remaining data in the buffer after stream ends
+        if (lineBuffer.trim()) {
+          processStreamLine(lineBuffer.trim(), streamingContext);
+        }
       } catch (error) {
         // Skip error message when abort was triggered by /clear
         if (!clearAbortRef.current) {
           console.error("Failed to send message:", error);
+          const errorText = error instanceof Error
+            ? error.message
+            : t("chat.errorFailedResponse");
           addMessage({
             type: "chat",
             role: "assistant",
-            content: t("chat.errorFailedResponse"),
+            content: errorText,
             timestamp: Date.now(),
           });
           // Clear stale sessionId so next request creates a fresh session

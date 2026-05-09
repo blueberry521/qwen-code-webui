@@ -268,6 +268,7 @@ async function executeQwenCommand(
       type: "error",
       error: error instanceof Error ? error.message : String(error),
     });
+    enqueue({ type: "done" });
   } finally {
     _activeChatCount--;
     // Ensure CLI subprocess is killed on any exit path (issue #84)
@@ -370,6 +371,7 @@ export async function handleChatRequest(
           error: error instanceof Error ? error.message : String(error),
         };
         enqueue(errorResponse);
+        enqueue({ type: "done" });
         try { controller.close(); } catch { /* already closed */ }
       }
     },
