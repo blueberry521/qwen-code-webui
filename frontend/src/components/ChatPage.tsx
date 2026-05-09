@@ -616,6 +616,16 @@ export function ChatPage() {
           } catch { /* ignore parse error */ }
         }
 
+        // Handle non-200 responses (409, 401, 500, etc.)
+        if (!response.ok) {
+          let errorMsg = `Server error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.error) errorMsg = String(errorData.error);
+          } catch { /* use default message */ }
+          throw new Error(errorMsg);
+        }
+
         if (!response.body) throw new Error("No response body");
 
         const reader = response.body.getReader();
@@ -704,6 +714,9 @@ export function ChatPage() {
             content: t("chat.errorFailedResponse"),
             timestamp: Date.now(),
           });
+          // Clear stale sessionId so next request creates a fresh session
+          // instead of trying to resume a dead one (e.g. after server restart)
+          setCurrentSessionId(null);
         }
       } finally {
         clearAbortRef.current = false;
@@ -793,6 +806,12 @@ export function ChatPage() {
   }, [setMessages, setCurrentSessionId, setHasShownInitMessage, setHasReceivedInit, addMessage, t, navigate, abortRequest, currentRequestId, isLoading, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
 
   // Permission request handlers
+  // Abort backend request when permission response HTTP POST fails,
+  // preventing stuck canUseTool promises that block the stream forever.
+  const handlePermissionAbort = useCallback(async () => {
+    await abortRequest(currentRequestId, isLoading, resetRequestState);
+  }, [abortRequest, currentRequestId, isLoading, resetRequestState]);
+
   const handlePermissionAllow = useCallback(async () => {
     if (!permissionRequest) return;
 
@@ -830,9 +849,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          await handlePermissionAbort();
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        await handlePermissionAbort();
       }
       closePermissionRequest();
       return;
@@ -860,6 +881,7 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    handlePermissionAbort,
   ]);
 
   const handlePermissionAllowPermanent = useCallback(async () => {
@@ -894,9 +916,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          await handlePermissionAbort();
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        await handlePermissionAbort();
       }
       closePermissionRequest();
       return;
@@ -924,6 +948,7 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    handlePermissionAbort,
   ]);
 
   // "Allow all run_shell_command" — persist bare tool name for broad approval
@@ -943,9 +968,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          await handlePermissionAbort();
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        await handlePermissionAbort();
       }
       closePermissionRequest();
       return;
@@ -966,6 +993,7 @@ export function ChatPage() {
     closePermissionRequest,
     resetDenialCounter,
     clearNotification,
+    handlePermissionAbort,
   ]);
 
   const handlePermissionDeny = useCallback(async () => {
@@ -1002,9 +1030,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          await handlePermissionAbort();
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        await handlePermissionAbort();
       }
       closePermissionRequest();
       return;
@@ -1034,6 +1064,7 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    handlePermissionAbort,
   ]);
 
   // Plan mode request handlers
