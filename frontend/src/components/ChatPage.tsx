@@ -616,6 +616,16 @@ export function ChatPage() {
           } catch { /* ignore parse error */ }
         }
 
+        // Handle non-200 responses (409, 401, 500, etc.)
+        if (!response.ok) {
+          let errorMsg = `Server error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.error) errorMsg = String(errorData.error);
+          } catch { /* use default message */ }
+          throw new Error(errorMsg);
+        }
+
         if (!response.body) throw new Error("No response body");
 
         const reader = response.body.getReader();
@@ -705,6 +715,9 @@ export function ChatPage() {
             timestamp: Date.now(),
           });
         }
+        // Clear stale sessionId so next request creates a fresh session
+        // instead of trying to resume a dead one (e.g. after server restart)
+        setCurrentSessionId(null);
       } finally {
         clearAbortRef.current = false;
 
@@ -830,9 +843,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          abortRequest(currentRequestId, true, resetRequestState);
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        abortRequest(currentRequestId, true, resetRequestState);
       }
       closePermissionRequest();
       return;
@@ -860,6 +875,9 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    abortRequest,
+    currentRequestId,
+    resetRequestState,
   ]);
 
   const handlePermissionAllowPermanent = useCallback(async () => {
@@ -894,9 +912,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          abortRequest(currentRequestId, true, resetRequestState);
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        abortRequest(currentRequestId, true, resetRequestState);
       }
       closePermissionRequest();
       return;
@@ -924,6 +944,9 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    abortRequest,
+    currentRequestId,
+    resetRequestState,
   ]);
 
   // "Allow all run_shell_command" — persist bare tool name for broad approval
@@ -943,9 +966,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          abortRequest(currentRequestId, true, resetRequestState);
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        abortRequest(currentRequestId, true, resetRequestState);
       }
       closePermissionRequest();
       return;
@@ -966,6 +991,9 @@ export function ChatPage() {
     closePermissionRequest,
     resetDenialCounter,
     clearNotification,
+    abortRequest,
+    currentRequestId,
+    resetRequestState,
   ]);
 
   const handlePermissionDeny = useCallback(async () => {
@@ -1002,9 +1030,11 @@ export function ChatPage() {
         });
         if (!resp.ok) {
           console.warn("Permission response failed:", resp.status);
+          abortRequest(currentRequestId, true, resetRequestState);
         }
       } catch (error) {
         console.error("Failed to send permission response:", error);
+        abortRequest(currentRequestId, true, resetRequestState);
       }
       closePermissionRequest();
       return;
@@ -1034,6 +1064,9 @@ export function ChatPage() {
     clearNotification,
     isRemoteWorkspace,
     remoteChat,
+    abortRequest,
+    currentRequestId,
+    resetRequestState,
   ]);
 
   // Plan mode request handlers
