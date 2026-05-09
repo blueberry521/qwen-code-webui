@@ -298,6 +298,10 @@ export function ChatPage() {
               commandLoopShowRef.current?.(request);
               // Auto-abort the remote request
               remoteChat.abortCurrentRequest();
+              // Clear sessionId on fatal session errors
+              if (request.errorOutput?.toLowerCase().includes("input closed")) {
+                setCurrentSessionId(null);
+              }
             },
             onAutoRejection: (toolName, content) => {
               return recordAutoRejection(toolName, content);
@@ -587,6 +591,7 @@ export function ChatPage() {
       // Local state for this streaming session
       let localHasReceivedInit = false;
       let shouldAbort = false;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
       try {
         const response = await fetch(getChatUrl(), {
@@ -622,7 +627,7 @@ export function ChatPage() {
 
         if (!response.body) throw new Error("No response body");
 
-        const reader = response.body.getReader();
+        reader = response.body.getReader();
         const decoder = new TextDecoder();
 
         const streamingContext: StreamingContext = {
@@ -660,6 +665,10 @@ export function ChatPage() {
             showCommandLoopRequest(request);
             // Auto-abort the request
             createAbortHandler(requestId)();
+            // Clear sessionId on fatal session errors
+            if (request.errorOutput?.toLowerCase().includes("input closed")) {
+              setCurrentSessionId(null);
+            }
           },
           // Proactive canUseTool permission request
           onPermissionRequest: (event) => {
@@ -724,6 +733,14 @@ export function ChatPage() {
           setCurrentSessionId(null);
         }
       } finally {
+        // Release the reader to free the HTTP connection.
+        // Without this, the browser keeps connections open and eventually
+        // hits its per-host connection limit (6 for HTTP/1.1), causing
+        // persistent "Failed to fetch" on all subsequent requests.
+        if (reader) {
+          try { reader.releaseLock(); } catch { /* already released */ }
+        }
+
         clearAbortRef.current = false;
 
         // Note: Input notification will be shown via useEffect when isLoading becomes false.
