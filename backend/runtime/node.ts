@@ -125,6 +125,12 @@ export class NodeRuntime implements Runtime {
       fetch: app.fetch,
       port,
       hostname,
+      serverOptions: {
+        // Disable timeouts for long-running streaming/SSE responses
+        headersTimeout: 0,
+        requestTimeout: 0,
+        keepAliveTimeout: 0,
+      },
     });
 
     console.log(`Listening on http://${hostname}:${port}/`);
