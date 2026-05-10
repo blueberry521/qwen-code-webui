@@ -7,7 +7,7 @@
  * Note: Todo messages are handled by ChatViewer using UpdatedPlanToolCall
  */
 
-import { useRef, useEffect, useMemo, useCallback } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChatViewer,
@@ -41,6 +41,7 @@ export function WebUIChatMessages({
 }: WebUIChatMessagesProps) {
   const chatViewerRef = useRef<ChatViewerHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true);
 
   // Adapt messages to webui format
   const adaptedMessages = useMemo(() => {
@@ -56,24 +57,27 @@ export function WebUIChatMessages({
     });
   }, [adaptedMessages]);
 
-  // Check if user is near bottom of messages
-  const isNearBottom = useCallback(() => {
+  // Track whether user has scrolled away from bottom
+  useEffect(() => {
     const container = containerRef.current;
-    if (!container) return true;
+    if (!container) return;
 
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    return (
-      scrollHeight - scrollTop - clientHeight <
-      UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX
-    );
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      shouldAutoScroll.current =
+        scrollHeight - scrollTop - clientHeight < UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX;
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Auto-scroll to bottom when messages change (only if user is already near bottom)
+  // Auto-scroll to bottom when messages change (only if user hasn't scrolled away)
   useEffect(() => {
-    if (chatViewerRef.current && isNearBottom()) {
+    if (chatViewerRef.current && shouldAutoScroll.current) {
       chatViewerRef.current.scrollToBottom("smooth");
     }
-  }, [messages, isNearBottom]);
+  }, [messages]);
 
   // Force expand/collapse thinking messages based on expandThinking prop
   useEffect(() => {

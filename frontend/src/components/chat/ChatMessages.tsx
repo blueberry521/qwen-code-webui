@@ -28,6 +28,7 @@ interface ChatMessagesProps {
 export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true);
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -36,21 +37,24 @@ export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessag
     }
   };
 
-  // Check if user is near bottom of messages
-  const isNearBottom = () => {
-    const container = messagesContainerRef.current;
-    if (!container) return true;
-
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    return (
-      scrollHeight - scrollTop - clientHeight <
-      UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX
-    );
-  };
-
-  // Auto-scroll when messages change (only if user is already near bottom)
+  // Track whether user has scrolled away from bottom
   useEffect(() => {
-    if (isNearBottom()) {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      shouldAutoScroll.current =
+        scrollHeight - scrollTop - clientHeight < UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX;
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Auto-scroll when messages change (only if user hasn't scrolled away)
+  useEffect(() => {
+    if (shouldAutoScroll.current) {
       scrollToBottom();
     }
   }, [messages]);
