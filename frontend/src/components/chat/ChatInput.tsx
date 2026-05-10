@@ -413,7 +413,7 @@ export function ChatInput({
             )}
           </div>
           <div className="flex gap-2 pb-3">
-            {isLoading && currentRequestId && (
+            {isLoading && (
               <button
                 type="button"
                 onClick={onAbort}

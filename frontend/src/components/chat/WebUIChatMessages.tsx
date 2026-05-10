@@ -7,7 +7,7 @@
  * Note: Todo messages are handled by ChatViewer using UpdatedPlanToolCall
  */
 
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChatViewer,
@@ -16,6 +16,7 @@ import {
 import "@qwen-code/webui/styles.css";
 import type { AllMessage } from "../../types";
 import type { ExtendedMessage } from "../../adapters";
+import { UI_CONSTANTS } from "../../utils/constants";
 import {
   adaptMessagesToWebUI,
   filterEmptyMessages,
@@ -55,12 +56,24 @@ export function WebUIChatMessages({
     });
   }, [adaptedMessages]);
 
-  // Auto-scroll to bottom when messages change
+  // Check if user is near bottom of messages
+  const isNearBottom = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return true;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    return (
+      scrollHeight - scrollTop - clientHeight <
+      UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX
+    );
+  }, []);
+
+  // Auto-scroll to bottom when messages change (only if user is already near bottom)
   useEffect(() => {
-    if (chatViewerRef.current) {
+    if (chatViewerRef.current && isNearBottom()) {
       chatViewerRef.current.scrollToBottom("smooth");
     }
-  }, [messages]);
+  }, [messages, isNearBottom]);
 
   // Force expand/collapse thinking messages based on expandThinking prop
   useEffect(() => {
@@ -100,7 +113,7 @@ export function WebUIChatMessages({
             messages={standardMessages}
             className="webui-chat-viewer"
             emptyMessage=""
-            autoScroll={true}
+            autoScroll={false}
           />
         </>
       )}

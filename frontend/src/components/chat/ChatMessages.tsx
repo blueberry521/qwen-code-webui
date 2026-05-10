@@ -17,7 +17,7 @@ import {
   TodoMessageComponent,
   LoadingComponent,
 } from "../MessageComponents";
-// import { UI_CONSTANTS } from "../../utils/constants"; // Unused for now
+import { UI_CONSTANTS } from "../../utils/constants";
 
 interface ChatMessagesProps {
   messages: AllMessage[];
@@ -36,21 +36,23 @@ export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessag
     }
   };
 
-  // Check if user is near bottom of messages (unused but kept for future use)
-  // const isNearBottom = () => {
-  //   const container = messagesContainerRef.current;
-  //   if (!container) return true;
+  // Check if user is near bottom of messages
+  const isNearBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
 
-  //   const { scrollTop, scrollHeight, clientHeight } = container;
-  //   return (
-  //     scrollHeight - scrollTop - clientHeight <
-  //     UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX
-  //   );
-  // };
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    return (
+      scrollHeight - scrollTop - clientHeight <
+      UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX
+    );
+  };
 
-  // Auto-scroll when messages change
+  // Auto-scroll when messages change (only if user is already near bottom)
   useEffect(() => {
-    scrollToBottom();
+    if (isNearBottom()) {
+      scrollToBottom();
+    }
   }, [messages]);
 
   const renderMessage = (message: AllMessage, index: number) => {
