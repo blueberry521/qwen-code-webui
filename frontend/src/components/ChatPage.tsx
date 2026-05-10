@@ -687,9 +687,9 @@ export function ChatPage() {
               closePermissionRequest();
             }
           },
-          // Thinking timeout
+          // Thinking timeout — use ref to avoid stale closure over the 5-minute timer
           thinkingTimeout: {
-            onThinkingTimeout: handleThinkingTimeout,
+            onThinkingTimeout: (content, info) => thinkingTimeoutRef.current?.(content, info),
           },
         };
 
@@ -1148,6 +1148,7 @@ export function ChatPage() {
     content: string;
     elapsed: number;
     reason: "idle" | "absolute";
+    aborted: boolean;
   } | null>(null);
 
   const handleThinkingTimeout = useCallback(
@@ -1155,11 +1156,15 @@ export function ChatPage() {
       accumulatedContent: string,
       info: ThinkingTimeoutContext,
     ) => {
+      let aborted = false;
+
       // Abort the request
       if (isLoading && currentRequestId) {
         abortRequest(currentRequestId, isLoading, resetRequestState);
+        aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
         remoteChat.abortCurrentRequest();
+        aborted = true;
       }
 
       // Show timeout notification with thinking content
@@ -1167,6 +1172,7 @@ export function ChatPage() {
         content: accumulatedContent,
         elapsed: info.elapsedSeconds,
         reason: info.reason,
+        aborted,
       });
     },
     [isLoading, currentRequestId, abortRequest, resetRequestState, isRemoteWorkspace, remoteChat],
@@ -1688,13 +1694,21 @@ export function ChatPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
                     {thinkingTimeoutInfo.reason === "idle"
-                      ? t("thinkingTimeout.stalledTitle", "Thinking stalled — auto-aborted")
-                      : t("thinkingTimeout.title", "Thinking timeout — auto-aborted")}
+                      ? thinkingTimeoutInfo.aborted
+                        ? t("thinkingTimeout.stalledTitle", "Thinking stalled — auto-aborted")
+                        : t("thinkingTimeout.stalledTitleNotAborted", "Thinking stalled detected")
+                      : thinkingTimeoutInfo.aborted
+                        ? t("thinkingTimeout.title", "Thinking timeout — auto-aborted")
+                        : t("thinkingTimeout.titleNotAborted", "Thinking timeout detected")}
                   </p>
                   <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
                     {thinkingTimeoutInfo.reason === "idle"
-                      ? t("thinkingTimeout.stalledDescription", "AI produced no new output for {{minutes}} minutes and was auto-aborted. Here's what the AI was thinking about:", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })
-                      : t("thinkingTimeout.description", "AI thinking exceeded {{minutes}} minutes total and was auto-aborted. Here's what the AI was thinking about:", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })}
+                      ? thinkingTimeoutInfo.aborted
+                        ? t("thinkingTimeout.stalledDescription", "AI produced no new output for {{minutes}} minutes and was auto-aborted. Here's what the AI was thinking about:", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })
+                        : t("thinkingTimeout.stalledDescriptionNotAborted", "AI produced no new output for {{minutes}} minutes (request may have already completed).", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })
+                      : thinkingTimeoutInfo.aborted
+                        ? t("thinkingTimeout.description", "AI thinking exceeded {{minutes}} minutes total and was auto-aborted. Here's what the AI was thinking about:", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })
+                        : t("thinkingTimeout.descriptionNotAborted", "AI thinking exceeded {{minutes}} minutes total (request may have already completed).", { minutes: Math.round(thinkingTimeoutInfo.elapsed / 60) })}
                   </p>
                   {thinkingTimeoutInfo.content && (
                     <details className="mt-2">

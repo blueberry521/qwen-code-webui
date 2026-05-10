@@ -792,5 +792,197 @@ describe("useStreamParser", () => {
       vi.advanceTimersByTime(5 * 60 * 1000);
       expect(onThinkingTimeout).toHaveBeenCalledTimes(1);
     });
+
+    describe("stream_event handling", () => {
+      function makeThinkingDelta(delta: string) {
+        return {
+          type: "stream_event" as const,
+          uuid: generateId(),
+          session_id: "test-session",
+          parent_tool_use_id: null,
+          event: {
+            type: "content_block_delta" as const,
+            index: 0,
+            delta: { type: "thinking_delta" as const, thinking: delta },
+          },
+        };
+      }
+
+      function makeTextDelta(text: string) {
+        return {
+          type: "stream_event" as const,
+          uuid: generateId(),
+          session_id: "test-session",
+          parent_tool_use_id: null,
+          event: {
+            type: "content_block_delta" as const,
+            index: 0,
+            delta: { type: "text_delta" as const, text },
+          },
+        };
+      }
+
+      function makeInputJsonDelta(partialJson: string) {
+        return {
+          type: "stream_event" as const,
+          uuid: generateId(),
+          session_id: "test-session",
+          parent_tool_use_id: null,
+          event: {
+            type: "content_block_delta" as const,
+            index: 0,
+            delta: { type: "input_json_delta" as const, partial_json: partialJson },
+          },
+        };
+      }
+
+      it("should start thinking timer on first thinking_delta stream event", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Let me think...") }),
+          mockContext,
+        );
+
+        // Thinking message should be set
+        expect(mockContext.setCurrentThinkingMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "thinking", content: "Let me think..." }),
+        );
+
+        // Advance to 5 minutes — should fire idle timeout
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        expect(onThinkingTimeout).toHaveBeenCalledTimes(1);
+      });
+
+      it("should reset idle timer on subsequent thinking_delta events", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Analyzing code...") }),
+          mockContext,
+        );
+
+        // Advance 4 minutes, then send another thinking delta
+        vi.advanceTimersByTime(4 * 60 * 1000);
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta(" Still thinking...") }),
+          mockContext,
+        );
+
+        // Advance another 4 minutes — total 8 minutes, but idle was reset at 4 min
+        vi.advanceTimersByTime(4 * 60 * 1000);
+
+        // Should NOT have fired yet (only 4 min since last activity)
+        expect(onThinkingTimeout).not.toHaveBeenCalled();
+
+        // Advance 1 more minute to cross the 5 min idle threshold
+        vi.advanceTimersByTime(1 * 60 * 1000);
+        expect(onThinkingTimeout).toHaveBeenCalledTimes(1);
+      });
+
+      it("should not fire false positive stall during continuous thinking_delta events", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Start") }),
+          mockContext,
+        );
+
+        // Send thinking deltas every 4 minutes for 12 minutes (stay under 15 min absolute)
+        for (let i = 0; i < 3; i++) {
+          vi.advanceTimersByTime(4 * 60 * 1000);
+          result.current.processStreamLine(
+            JSON.stringify({ type: "claude_json", data: makeThinkingDelta(` chunk ${i}`) }),
+            mockContext,
+          );
+        }
+
+        // No timeout should have fired — thinking was continuously active and under 15 min
+        expect(onThinkingTimeout).not.toHaveBeenCalled();
+      });
+
+      it("should clear thinking state on text_delta event", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Thinking...") }),
+          mockContext,
+        );
+
+        // Text output means thinking has ended
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeTextDelta("Here's the answer") }),
+          mockContext,
+        );
+
+        // Advance 5+ minutes — no timeout should fire since thinking was cleared
+        vi.advanceTimersByTime(6 * 60 * 1000);
+        expect(onThinkingTimeout).not.toHaveBeenCalled();
+      });
+
+      it("should clear thinking state on input_json_delta event", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Planning tool call...") }),
+          mockContext,
+        );
+
+        // Tool call JSON output means thinking has ended
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeInputJsonDelta('{"command":') }),
+          mockContext,
+        );
+
+        // Advance 5+ minutes — no timeout should fire
+        vi.advanceTimersByTime(6 * 60 * 1000);
+        expect(onThinkingTimeout).not.toHaveBeenCalled();
+      });
+
+      it("should ignore thinking_delta after timeout abort", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Thinking...") }),
+          mockContext,
+        );
+
+        // Trigger idle timeout
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        expect(onThinkingTimeout).toHaveBeenCalledTimes(1);
+
+        // Late thinking_delta should be ignored (thinkingAbortedRef is true)
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Late delta") }),
+          mockContext,
+        );
+
+        // No additional timeout
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        expect(onThinkingTimeout).toHaveBeenCalledTimes(1);
+      });
+
+      it("should accumulate thinking content from multiple thinking_delta events", () => {
+        const { result } = renderHook(() => useStreamParser());
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta("Part 1") }),
+          mockContext,
+        );
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta(" Part 2") }),
+          mockContext,
+        );
+
+        result.current.processStreamLine(
+          JSON.stringify({ type: "claude_json", data: makeThinkingDelta(" Part 3") }),
+          mockContext,
+        );
+
+        // updateThinkingMessage should have been called with accumulated content
+        expect(mockContext.updateThinkingMessage).toHaveBeenCalledWith("Part 1 Part 2 Part 3");
+      });
+    });
   });
 });

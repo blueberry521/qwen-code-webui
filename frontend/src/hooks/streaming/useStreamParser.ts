@@ -5,6 +5,7 @@ import type {
   SystemMessage,
   AbortMessage,
 } from "../../types";
+import type { SDKPartialAssistantMessage } from "@qwen-code/sdk";
 import {
   isSystemMessage,
   isAssistantMessage,
@@ -12,6 +13,7 @@ import {
   isUserMessage,
   isStreamEventMessage,
 } from "../../utils/messageTypes";
+import { createThinkingMessage } from "../../utils/messageConversion";
 import type { StreamingContext } from "./useMessageProcessor";
 import {
   UnifiedMessageProcessor,
@@ -74,6 +76,50 @@ export function useStreamParser() {
       }, delay);
     },
     [],
+  );
+
+  /** Handle stream_event messages for thinking timer management */
+  const handleStreamEvent = useCallback(
+    (
+      message: SDKPartialAssistantMessage,
+      context: ProcessingContext,
+    ) => {
+      const event = message.event;
+
+      if (event.type === "content_block_delta") {
+        const delta = event.delta;
+
+        if (delta.type === "thinking_delta") {
+          if (thinkingAbortedRef.current) return;
+
+          const newContent = thinkingContentRef.current + delta.thinking;
+          thinkingContentRef.current = newContent;
+
+          if (!thinkingTimerRef.current) {
+            // First thinking delta — start the timer and create thinking message
+            const now = Date.now();
+            thinkingStartedAtRef.current = now;
+            thinkingLastActivityRef.current = now;
+            if (context.setCurrentThinkingMessage) {
+              const thinkingMessage = createThinkingMessage(newContent, now);
+              context.setCurrentThinkingMessage(thinkingMessage);
+            }
+            if (context.onThinkingTimeout) {
+              scheduleThinkingTimer(context.onThinkingTimeout);
+            }
+          } else {
+            // Subsequent deltas — update content and reset idle timer
+            context.updateThinkingMessage?.(newContent);
+          }
+        } else if (delta.type === "text_delta" || delta.type === "input_json_delta") {
+          // Non-thinking output means thinking phase has ended
+          if (thinkingTimerRef.current) {
+            context.setCurrentThinkingMessage?.(null);
+          }
+        }
+      }
+    },
+    [scheduleThinkingTimer],
   );
 
   // Convert StreamingContext to ProcessingContext
@@ -198,12 +244,21 @@ export function useStreamParser() {
           return;
       }
 
+      // Handle stream_event messages for thinking timer management
+      if (msgType === "stream_event") {
+        handleStreamEvent(
+          qwenData as unknown as SDKPartialAssistantMessage,
+          processingContext,
+        );
+        return;
+      }
+
       // Process the message using the unified processor
       processor.processMessage(qwenData, processingContext, {
         isStreaming: true,
       });
     },
-    [processor, adaptContext],
+    [processor, adaptContext, handleStreamEvent],
   );
 
   const processStreamLine = useCallback(
