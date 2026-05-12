@@ -136,7 +136,9 @@ async function executeQwenCommand(
         }
       }
 
-      // Defense: auto-approve tools in the session's allowedTools (passed from frontend).
+      // Defense: auto-approve tools in the session's allowedTools — the persistent set
+      // of tools the user has approved in Settings (unlike localAllowedTools which only
+      // tracks approvals within the current streaming request).
       // The SDK should handle this before calling canUseTool, but this provides
       // defense-in-depth in case the SDK's internal matching has edge cases.
       if (allowedTools && allowedTools.length > 0) {
@@ -148,7 +150,7 @@ async function executeQwenCommand(
             if (patternToolName !== toolName) return false;
             const inner = pattern.substring(openParen + 1, pattern.length - 1);
             const cmdPrefix = inner.replace(/:.*$/, '');
-            const actualCmd = extractBaseCommand(String(input?.command || ''));
+            const actualCmd = String(input?.command || '').trim();
             return actualCmd === cmdPrefix || actualCmd.startsWith(cmdPrefix + ' ');
           }
           return false;

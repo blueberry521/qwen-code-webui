@@ -656,6 +656,182 @@ describe("Chat Handler - Permission Mode Tests", () => {
     });
   });
 
+  describe("canUseTool - allowedTools matching", () => {
+    let capturedCanUseTool: ((toolName: string, input: Record<string, unknown>, options: { signal: AbortSignal }) => Promise<any>) | null = null;
+
+    async function setupWithCanUseTool(allowedTools?: string[]) {
+      const chatRequest: ChatRequest = {
+        message: "Test message",
+        requestId: "test-canusetool",
+        allowedTools,
+      };
+
+      mockContext.req.json = vi.fn().mockResolvedValue(chatRequest);
+
+      capturedCanUseTool = null;
+
+      mockQuery.mockImplementation(
+        (args: any) =>
+          ({
+            [Symbol.asyncIterator]: async function* () {
+              capturedCanUseTool = args.options.canUseTool;
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "Response" }] },
+                session_id: "test-session",
+                parent_tool_use_id: null,
+              } as any;
+            },
+            interrupt: vi.fn(),
+            next: vi.fn(),
+            return: vi.fn(),
+            throw: vi.fn(),
+          }) as any,
+      );
+
+      await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      expect(capturedCanUseTool).not.toBeNull();
+    }
+
+    it("should auto-approve edit when in allowedTools", async () => {
+      await setupWithCanUseTool(["edit"]);
+
+      const result = await capturedCanUseTool!(
+        "edit",
+        { file_path: "/test.ts", old_string: "a", new_string: "b" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { file_path: "/test.ts", old_string: "a", new_string: "b" } });
+    });
+
+    it("should auto-approve read-only tools regardless of allowedTools", async () => {
+      await setupWithCanUseTool(undefined);
+
+      const result = await capturedCanUseTool!(
+        "read_file",
+        { file_path: "/test.ts" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { file_path: "/test.ts" } });
+    });
+
+    it("should auto-approve web_fetch as read-only", async () => {
+      await setupWithCanUseTool(undefined);
+
+      const result = await capturedCanUseTool!(
+        "web_fetch",
+        { url: "https://example.com" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { url: "https://example.com" } });
+    });
+
+    it("should auto-approve think as read-only", async () => {
+      await setupWithCanUseTool(undefined);
+
+      const result = await capturedCanUseTool!(
+        "think",
+        { thought: "thinking..." },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { thought: "thinking..." } });
+    });
+
+    it("should auto-approve run_shell_command matching command prefix", async () => {
+      await setupWithCanUseTool(["run_shell_command(git:*)"]);
+
+      const result = await capturedCanUseTool!(
+        "run_shell_command",
+        { command: "git status" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { command: "git status" } });
+    });
+
+    it("should deny run_shell_command when command prefix does not match", async () => {
+      await setupWithCanUseTool(["run_shell_command(git:*)"]);
+
+      // Without a pending permission resolution, the callback will send a permission_request
+      // and wait forever. We abort to get a denial.
+      const abortController = new AbortController();
+      const promise = capturedCanUseTool!(
+        "run_shell_command",
+        { command: "rm -rf /" },
+        { signal: abortController.signal },
+      );
+
+      // Give it a tick to reach the pending state, then abort
+      await new Promise(resolve => setTimeout(resolve, 10));
+      abortController.abort();
+
+      const result = await promise;
+      expect(result.behavior).toBe("deny");
+    });
+
+    it("should auto-approve run_shell_command with bare tool name", async () => {
+      await setupWithCanUseTool(["run_shell_command"]);
+
+      const result = await capturedCanUseTool!(
+        "run_shell_command",
+        { command: "npm install" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { command: "npm install" } });
+    });
+
+    it("should auto-approve multi-word command prefixes", async () => {
+      await setupWithCanUseTool(["run_shell_command(npm run build:*)"]);
+
+      const result = await capturedCanUseTool!(
+        "run_shell_command",
+        { command: "npm run build --production" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({ behavior: "allow", updatedInput: { command: "npm run build --production" } });
+    });
+
+    it("should not auto-approve when allowedTools is empty", async () => {
+      await setupWithCanUseTool([]);
+
+      const abortController = new AbortController();
+      const promise = capturedCanUseTool!(
+        "edit",
+        { file_path: "/test.ts", old_string: "a", new_string: "b" },
+        { signal: abortController.signal },
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      abortController.abort();
+
+      const result = await promise;
+      expect(result.behavior).toBe("deny");
+    });
+
+    it("should not auto-approve when allowedTools is undefined", async () => {
+      await setupWithCanUseTool(undefined);
+
+      const abortController = new AbortController();
+      const promise = capturedCanUseTool!(
+        "edit",
+        { file_path: "/test.ts", old_string: "a", new_string: "b" },
+        { signal: abortController.signal },
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      abortController.abort();
+
+      const result = await promise;
+      expect(result.behavior).toBe("deny");
+    });
+  });
+
   describe("Abort Controller Management with Permission Mode", () => {
     it("should manage abort controller correctly with permissionMode", async () => {
       const chatRequest: ChatRequest = {
