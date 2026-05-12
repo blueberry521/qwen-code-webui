@@ -103,7 +103,7 @@ export function useTabNotification() {
   // Listen for focus events from parent window
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'openace-focus-input' || event.data?.type === 'openace-tab-activated') {
+      if (event.data?.type === 'openace-focus-input' || event.data?.type === 'openace-clear-notification-state') {
         // Tab is now active, clear notification
         clearNotification();
       }
