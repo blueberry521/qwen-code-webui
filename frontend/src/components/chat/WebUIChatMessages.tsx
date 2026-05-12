@@ -62,14 +62,28 @@ export function WebUIChatMessages({
     const container = containerRef.current;
     if (!container) return;
 
+    let awayTimer: ReturnType<typeof setTimeout>;
+
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      shouldAutoScroll.current =
-        scrollHeight - scrollTop - clientHeight < UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX;
+      const nearBottom = scrollHeight - scrollTop - clientHeight < UI_CONSTANTS.NEAR_BOTTOM_THRESHOLD_PX;
+
+      if (nearBottom) {
+        clearTimeout(awayTimer);
+        shouldAutoScroll.current = true;
+      } else {
+        clearTimeout(awayTimer);
+        awayTimer = setTimeout(() => {
+          shouldAutoScroll.current = false;
+        }, 100);
+      }
     };
 
     container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      clearTimeout(awayTimer);
+    };
   }, []);
 
   // Auto-scroll to bottom when messages change (only if user hasn't scrolled away)
