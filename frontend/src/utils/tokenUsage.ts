@@ -1,12 +1,10 @@
 import type {
   AllMessage,
   ChatMessage,
-  SystemMessage,
   ToolMessage,
   ToolResultMessage,
   ThinkingMessage,
 } from "../types";
-import type { ExtendedUsage } from "@qwen-code/sdk";
 
 /**
  * Token usage information for display in the status bar
@@ -196,23 +194,14 @@ export function calculateContextBreakdown(
 }
 
 /**
- * Check if a message is a result message with usage data
- */
-function isResultMessageWithUsage(
-  message: AllMessage,
-): message is SystemMessage & { type: "result"; usage: ExtendedUsage } {
-  return (
-    message.type === "result" &&
-    "usage" in message &&
-    typeof message.usage === "object"
-  );
-}
-
-/**
- * Calculate token usage from messages using three-level fallback:
- * 1. Latest assistant ChatMessage with per-request usage (accurate, from API)
- * 2. Latest result message usage (accumulated, used as fallback for DB reconnect etc.)
- * 3. Zero
+ * Calculate token usage from messages using per-request usage data.
+ * Reads input_tokens from the latest assistant ChatMessage's usage field,
+ * which represents the actual token count for a single API request.
+ *
+ * Note: We intentionally do NOT fall back to result message usage here,
+ * because result message input_tokens is an accumulated total across all
+ * turns in the session (stats.totalPromptTokens in the SDK), which would
+ * produce misleading percentages (e.g., 809%) when divided by contextWindowSize.
  *
  * @param messages Array of all messages in the conversation
  * @returns TokenUsageInfo with current prompt token count
@@ -221,7 +210,6 @@ export function calculateTokenUsage(messages: AllMessage[]): TokenUsageInfo {
   let promptTokens = 0;
   let outputTokens = 0;
 
-  // Priority 1: per-request usage from latest assistant ChatMessage
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (
@@ -233,18 +221,6 @@ export function calculateTokenUsage(messages: AllMessage[]): TokenUsageInfo {
       promptTokens = usage.input_tokens || 0;
       outputTokens = usage.output_tokens || 0;
       break;
-    }
-  }
-
-  // Priority 2: fallback to result message (accumulated, but better than zero)
-  if (promptTokens === 0) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (isResultMessageWithUsage(msg)) {
-        promptTokens = msg.usage.input_tokens || 0;
-        outputTokens = msg.usage.output_tokens || 0;
-        break;
-      }
     }
   }
 
