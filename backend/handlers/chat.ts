@@ -32,7 +32,7 @@ function mapPermissionMode(mode?: string): PermissionMode | undefined {
 // Tools that are safe to auto-approve without user confirmation.
 // Criteria: no side effects, no writes to filesystem or external systems.
 // Update this set when new read-only SDK tools are added.
-const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_directory"]);
+const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_directory", "web_fetch", "think"]);
 
 function extractBaseCommand(command: string): string {
   return command.trim().split(/\s+/)[0] || "";
@@ -132,6 +132,29 @@ async function executeQwenCommand(
         const baseCmd = extractBaseCommand(input.command as string);
         if (baseCmd && localAllowedTools.has(`${toolName}:${baseCmd}`)) {
           logger.chat.debug("canUseTool: auto-approving previously allowed command {toolName}:{baseCmd}", { toolName, baseCmd });
+          return { behavior: "allow", updatedInput: input };
+        }
+      }
+
+      // Defense: auto-approve tools in the session's allowedTools (passed from frontend).
+      // The SDK should handle this before calling canUseTool, but this provides
+      // defense-in-depth in case the SDK's internal matching has edge cases.
+      if (allowedTools && allowedTools.length > 0) {
+        const toolMatches = allowedTools.some(pattern => {
+          if (pattern === toolName) return true;
+          const openParen = pattern.indexOf('(');
+          if (openParen !== -1) {
+            const patternToolName = pattern.substring(0, openParen);
+            if (patternToolName !== toolName) return false;
+            const inner = pattern.substring(openParen + 1, pattern.length - 1);
+            const cmdPrefix = inner.replace(/:.*$/, '');
+            const actualCmd = extractBaseCommand(String(input?.command || ''));
+            return actualCmd === cmdPrefix || actualCmd.startsWith(cmdPrefix + ' ');
+          }
+          return false;
+        });
+        if (toolMatches) {
+          logger.chat.debug("canUseTool: auto-approving tool in session allowedTools: {toolName}", { toolName });
           return { behavior: "allow", updatedInput: input };
         }
       }
