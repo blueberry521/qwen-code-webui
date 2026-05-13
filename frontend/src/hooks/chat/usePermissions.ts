@@ -95,7 +95,11 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   useEffect(() => {
     const handler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEYS.ALLOWED_TOOLS) {
-        setAllowedTools(e.newValue ? JSON.parse(e.newValue) : []);
+        try {
+          setAllowedTools(e.newValue ? JSON.parse(e.newValue) : []);
+        } catch {
+          setAllowedTools([]);
+        }
       }
     };
     window.addEventListener("storage", handler);
@@ -188,6 +192,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   const allowToolPermanent = useCallback(
     (pattern: string, baseTools?: string[]) => {
       const currentAllowedTools = baseTools || allowedTools;
+      if (currentAllowedTools.includes(pattern)) return currentAllowedTools;
       const updatedAllowedTools = [...currentAllowedTools, pattern];
       setAllowedTools(updatedAllowedTools);
       setStorageItem(STORAGE_KEYS.ALLOWED_TOOLS, updatedAllowedTools);
