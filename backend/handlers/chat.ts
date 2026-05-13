@@ -159,6 +159,15 @@ async function executeQwenCommand(
           logger.chat.debug("canUseTool: auto-approving tool in session allowedTools: {toolName}", { toolName });
           return { behavior: "allow", updatedInput: input };
         }
+        logger.chat.info(
+          "canUseTool: allowedTools did not match toolName={toolName}, allowedTools={allowedTools}",
+          { toolName, allowedTools },
+        );
+      } else {
+        logger.chat.info(
+          "canUseTool: allowedTools is empty for toolName={toolName}",
+          { toolName },
+        );
       }
 
       const permissionId = crypto.randomUUID();
@@ -349,9 +358,13 @@ export async function handleChatRequest(
     "Received chat request {*}",
     chatRequest as unknown as Record<string, unknown>,
   );
-  logger.chat.debug(
-    "Chat request permissionMode: {permissionMode}",
-    { permissionMode: chatRequest.permissionMode },
+  logger.chat.info(
+    "Chat request allowedTools: count={count} tools={allowedTools} permissionMode={permissionMode}",
+    {
+      count: chatRequest.allowedTools?.length ?? 0,
+      allowedTools: chatRequest.allowedTools ?? [],
+      permissionMode: chatRequest.permissionMode,
+    },
   );
 
   logger.chat.info(

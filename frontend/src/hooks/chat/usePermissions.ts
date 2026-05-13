@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { PermissionMode } from "../../types";
 import { STORAGE_KEYS, getStorageItem, setStorageItem, removeStorageItem } from "../../utils/storage";
 
@@ -90,6 +90,18 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   const [allowedTools, setAllowedTools] = useState<string[]>(() =>
     getStorageItem<string[]>(STORAGE_KEYS.ALLOWED_TOOLS, []),
   );
+
+  // Sync allowedTools from localStorage when another tab modifies it
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.ALLOWED_TOOLS) {
+        setAllowedTools(e.newValue ? JSON.parse(e.newValue) : []);
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
   const [permissionRequest, setPermissionRequest] =
     useState<PermissionRequest | null>(null);
   const permissionRequestRef = useRef<PermissionRequest | null>(null);

@@ -884,8 +884,9 @@ export function ChatPage() {
       // For shell tools, persist pattern to localStorage; for non-shell, only this request
       const isShell = permissionRequest.toolName === "run_shell_command";
       if (isShell) {
+        let accumulated = allowedTools;
         permissionRequest.patterns.forEach((pattern) => {
-          allowToolPermanent(pattern, allowedTools);
+          accumulated = allowToolPermanent(pattern, accumulated);
         });
       }
       try {
@@ -953,8 +954,11 @@ export function ChatPage() {
 
     // Proactive canUseTool flow — update state for future queries + respond
     if (permissionRequest.permissionId) {
+      // Chain allowToolPermanent calls to avoid React batching race:
+      // each call receives the previous result as baseTools, so all patterns accumulate.
+      let accumulated = allowedTools;
       permissionRequest.patterns.forEach((pattern) => {
-        allowToolPermanent(pattern, allowedTools);
+        accumulated = allowToolPermanent(pattern, accumulated);
       });
       try {
         const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
@@ -973,6 +977,7 @@ export function ChatPage() {
     }
 
     // Legacy reactive flow
+    // Accumulate all patterns into a single update to avoid React batching race
     let updatedAllowedTools = allowedTools;
     permissionRequest.patterns.forEach((pattern) => {
       updatedAllowedTools = allowToolPermanent(pattern, updatedAllowedTools);
