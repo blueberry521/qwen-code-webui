@@ -25,6 +25,7 @@ import { useOpenAceSessionTracker } from "../hooks/useOpenAceSessionTracker";
 import { useTabNotification } from "../hooks/useTabNotification";
 import { calculateTokenUsage, calculateContextBreakdown } from "../utils/tokenUsage";
 import type { ContextUsageData } from "../utils/tokenUsage";
+import { createStallDetector } from "../utils/streamStallDetector";
 import { ContextUsagePanel } from "./chat/ContextUsagePanel";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsModal } from "./SettingsModal";
@@ -593,10 +594,16 @@ export function ChatPage() {
       let shouldAbort = false;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
+      // Stream stall detection: abort fetch if no data received for 60s.
+      // Backend sends keepalive \n every 15s, so 60s = 4 missed keepalives.
+      const fetchAbortController = new AbortController();
+      const stallDetector = createStallDetector(fetchAbortController);
+
       try {
         const response = await fetch(getChatUrl(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: fetchAbortController.signal,
           body: JSON.stringify({
             message: content,
             requestId,
@@ -698,6 +705,8 @@ export function ChatPage() {
           const { done, value } = await reader.read();
           if (done || shouldAbort) break;
 
+          stallDetector.onData();
+
           lineBuffer += decoder.decode(value, { stream: true });
           const lines = lineBuffer.split("\n");
           lineBuffer = lines.pop() || "";
@@ -716,8 +725,21 @@ export function ChatPage() {
           processStreamLine(lineBuffer.trim(), streamingContext);
         }
       } catch (error) {
-        // Skip error message when abort was triggered by /clear
-        if (!clearAbortRef.current) {
+        // Distinguish stall abort from other abort sources (e.g. /clear uses
+        // a separate AbortController via createAbortHandler). Check
+        // fetchAbortController.signal.aborted to identify our stall timeout.
+        if (
+          error instanceof DOMException && error.name === "AbortError"
+          && fetchAbortController.signal.aborted
+        ) {
+          addMessage({
+            type: "chat",
+            role: "assistant",
+            content: t("chat.errorStreamStall"),
+            timestamp: Date.now(),
+          });
+          setCurrentSessionId(null);
+        } else if (!clearAbortRef.current) {
           console.error("Failed to send message:", error);
           const errorText = error instanceof Error
             ? error.message
@@ -733,6 +755,8 @@ export function ChatPage() {
           setCurrentSessionId(null);
         }
       } finally {
+        stallDetector.dispose();
+
         // Release the reader to free the HTTP connection.
         // Without this, the browser keeps connections open and eventually
         // hits its per-host connection limit (6 for HTTP/1.1), causing
