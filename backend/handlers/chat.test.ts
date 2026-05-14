@@ -23,6 +23,7 @@ vi.mock("../utils/logger", () => ({
       debug: vi.fn(),
       error: vi.fn(),
       info: vi.fn(),
+      warn: vi.fn(),
     },
   },
 }));
@@ -829,6 +830,150 @@ describe("Chat Handler - Permission Mode Tests", () => {
 
       const result = await promise;
       expect(result.behavior).toBe("deny");
+    });
+  });
+
+  describe("Session Concurrency Guard", () => {
+    it("should abort existing request when new request arrives for same session", async () => {
+      let resolveBlocker: () => void;
+      const blocker = new Promise<void>((r) => { resolveBlocker = r; });
+
+      const firstRequest: ChatRequest = {
+        message: "First message",
+        requestId: "req-concurrent-1",
+        sessionId: "sess-concurrent",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValueOnce(firstRequest);
+
+      mockQuery.mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "First" }] }, session_id: "sess-concurrent", parent_tool_use_id: null } as any;
+          await blocker;
+        },
+      } as any);
+
+      const response1 = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      const reader1 = response1.body!.getReader();
+      await reader1.read();
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(requestAbortControllers.has("req-concurrent-1")).toBe(true);
+      const firstAc = requestAbortControllers.get("req-concurrent-1")!;
+      expect(firstAc.signal.aborted).toBe(false);
+
+      const secondRequest: ChatRequest = {
+        message: "Second message",
+        requestId: "req-concurrent-2",
+        sessionId: "sess-concurrent",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValueOnce(secondRequest);
+      mockQuery.mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "Second" }] }, session_id: "sess-concurrent", parent_tool_use_id: null } as any;
+        },
+      } as any);
+
+      await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+
+      expect(firstAc.signal.aborted).toBe(true);
+      expect(requestAbortControllers.has("req-concurrent-1")).toBe(false);
+
+      resolveBlocker();
+      reader1.cancel().catch(() => {});
+    });
+
+    it("should not interfere with requests that have no sessionId", async () => {
+      const req1: ChatRequest = { message: "Msg 1", requestId: "req-no-session-1" };
+      const req2: ChatRequest = { message: "Msg 2", requestId: "req-no-session-2" };
+
+      mockContext.req.json = vi.fn()
+        .mockResolvedValueOnce(req1)
+        .mockResolvedValueOnce(req2);
+
+      const makeIterator = () => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "OK" }] }, session_id: "s", parent_tool_use_id: null } as any;
+        },
+      } as any);
+
+      mockQuery.mockReturnValueOnce(makeIterator()).mockReturnValueOnce(makeIterator());
+
+      const res1 = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      const res2 = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+
+      for (const res of [res1, res2]) {
+        const reader = res.body!.getReader();
+        while (true) { const { done } = await reader.read(); if (done) break; }
+      }
+
+      expect(requestAbortControllers.size).toBe(0);
+    });
+
+    it("should clean up session mapping after request completes normally", async () => {
+      const req: ChatRequest = { message: "Msg", requestId: "req-cleanup", sessionId: "sess-cleanup-test" };
+      mockContext.req.json = vi.fn().mockResolvedValue(req);
+      mockQuery.mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "Done" }] }, session_id: "sess-cleanup-test", parent_tool_use_id: null } as any;
+        },
+      } as any);
+
+      const res = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      const reader = res.body!.getReader();
+      while (true) { const { done } = await reader.read(); if (done) break; }
+
+      expect(requestAbortControllers.has("req-cleanup")).toBe(false);
+    });
+
+    it("should resolve pending permissions from superseded request", async () => {
+      let capturedCanUseTool: any;
+      let resolveBlocker: () => void;
+      const blocker = new Promise<void>((r) => { resolveBlocker = r; });
+
+      const firstRequest: ChatRequest = {
+        message: "Msg",
+        requestId: "req-pp-1",
+        sessionId: "sess-pp",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValueOnce(firstRequest);
+
+      mockQuery.mockImplementationOnce((args: any) => ({
+        [Symbol.asyncIterator]: async function* () {
+          capturedCanUseTool = args.options.canUseTool;
+          yield { type: "assistant", message: { content: [{ type: "text", text: "Hello" }] }, session_id: "sess-pp", parent_tool_use_id: null } as any;
+          await blocker;
+        },
+      } as any));
+
+      const res1 = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      const reader1 = res1.body!.getReader();
+      await reader1.read();
+      await new Promise(r => setTimeout(r, 50));
+
+      const ac1 = requestAbortControllers.get("req-pp-1")!;
+      const canUseToolPromise = capturedCanUseTool!("edit", { file: "/test" }, { signal: ac1.signal });
+      await new Promise(r => setTimeout(r, 50));
+      expect(pendingPermissions.size).toBeGreaterThan(0);
+
+      const secondRequest: ChatRequest = {
+        message: "Msg 2",
+        requestId: "req-pp-2",
+        sessionId: "sess-pp",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValue(secondRequest);
+      mockQuery.mockReturnValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "World" }] }, session_id: "sess-pp", parent_tool_use_id: null } as any;
+        },
+      } as any);
+
+      await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+
+      const result = await canUseToolPromise;
+      expect(result.behavior).toBe("deny");
+
+      resolveBlocker();
+      reader1.cancel().catch(() => {});
     });
   });
 

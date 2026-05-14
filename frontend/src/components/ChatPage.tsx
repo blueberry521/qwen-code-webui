@@ -592,6 +592,7 @@ export function ChatPage() {
       // Local state for this streaming session
       let localHasReceivedInit = false;
       let shouldAbort = false;
+      let receivedResult = false;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
       // Stream stall detection: abort fetch if no data received for 60s.
@@ -698,6 +699,8 @@ export function ChatPage() {
           thinkingTimeout: {
             onThinkingTimeout: (content, info) => thinkingTimeoutRef.current?.(content, info),
           },
+          // Track normal completion (result message received)
+          onResultReceived: () => { receivedResult = true; },
         };
 
         let lineBuffer = "";
@@ -774,6 +777,17 @@ export function ChatPage() {
         // Clean up orphan proactive permission dialog (e.g. CLI crash → error → dialog remains)
         if (permissionRequestRef.current?.permissionId) {
           closePermissionRequest();
+        }
+        // Detect interrupted conversation: stream closed without receiving a 'result'
+        // message, and the user didn't initiate the abort. Show a warning so the user
+        // knows the AI may not have finished. Keep sessionId to allow resuming.
+        if (!receivedResult && !shouldAbort && !fetchAbortController.signal.aborted) {
+          addMessage({
+            type: "system",
+            subtype: "interrupted",
+            message: t("chat.errorInterrupted"),
+            timestamp: Date.now(),
+          });
         }
         resetRequestState();
       }

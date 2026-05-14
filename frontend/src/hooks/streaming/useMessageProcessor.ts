@@ -59,6 +59,8 @@ export interface StreamingContext {
   onPermissionOrphanCleanup?: () => void;
   // Thinking timeout
   thinkingTimeout?: ThinkingTimeoutInfo;
+  // Called when a 'result' message is received — signals normal completion
+  onResultReceived?: () => void;
 }
 
 /**
