@@ -35,6 +35,14 @@ export type AbortMessage = {
   timestamp: number;
 };
 
+// Interrupted message for unexpected stream closure (no result message received)
+export type InterruptedMessage = {
+  type: "system";
+  subtype: "interrupted";
+  message: string;
+  timestamp: number;
+};
+
 // Hooks message for hook execution notifications
 export type HooksMessage = {
   type: "system";
@@ -49,6 +57,7 @@ export type SystemMessage = (
   | SDKResultMessage
   | ErrorMessage
   | AbortMessage
+  | InterruptedMessage
   | HooksMessage
 ) & {
   timestamp: number;

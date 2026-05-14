@@ -8,6 +8,13 @@ import type { PendingPermission } from "./permission.ts";
 /** Track number of concurrent chat requests for diagnostics */
 let _activeChatCount = 0;
 
+/**
+ * Maps sessionId → requestId for active streaming requests.
+ * Prevents concurrent CLI processes for the same session, which causes
+ * API call conflicts and premature stream termination (issue #123).
+ */
+const activeSessions = new Map<string, string>();
+
 /** 24-hour timeout for user-facing operations (permission prompts, control requests) */
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 
@@ -312,6 +319,10 @@ async function executeQwenCommand(
       ac.abort();
       requestAbortControllers.delete(requestId);
     }
+    // Clean up session mapping so a new request can start for this session
+    if (sessionId && activeSessions.get(sessionId) === requestId) {
+      activeSessions.delete(sessionId);
+    }
 
     logger.chat.info(
       "[DIAG] Chat request FINALLY requestId={requestId} durationMs={durationMs} "
@@ -374,6 +385,32 @@ export async function handleChatRequest(
       pendingPermissions: pendingPermissions.size,
     },
   );
+
+  // Abort any existing request for the same session to prevent concurrent CLI
+  // processes from conflicting (issue #123). This can happen when the frontend
+  // stream closes prematurely and the user sends a new message before the old
+  // CLI subprocess is fully terminated.
+  if (chatRequest.sessionId) {
+    const existingRequestId = activeSessions.get(chatRequest.sessionId);
+    if (existingRequestId) {
+      const existingAc = requestAbortControllers.get(existingRequestId);
+      if (existingAc && !existingAc.signal.aborted) {
+        logger.chat.warn(
+          "[DIAG] Aborting existing request for session sessionId={sessionId} "
+          + "oldRequestId={oldRequestId} newRequestId={newRequestId}",
+          {
+            sessionId: chatRequest.sessionId,
+            oldRequestId: existingRequestId,
+            newRequestId: chatRequest.requestId,
+          },
+        );
+        existingAc.abort();
+        requestAbortControllers.delete(existingRequestId);
+      }
+      activeSessions.delete(chatRequest.sessionId);
+    }
+    activeSessions.set(chatRequest.sessionId, chatRequest.requestId);
+  }
 
   const encoder = new TextEncoder();
 
@@ -438,6 +475,23 @@ export async function handleChatRequest(
           },
         );
         ac.abort();
+
+        // Defense: log warning if subprocess may still be alive after 3s.
+        // The SDK's transport.close() sends SIGTERM, then SIGKILL after 5s,
+        // but the gap can allow a resumed session to spawn a second CLI process.
+        const checkId = setTimeout(() => {
+          if (requestAbortControllers.has(chatRequest.requestId)) {
+            logger.chat.warn(
+              "[DIAG] Subprocess may still be alive 3s after cancel requestId={requestId}",
+              { requestId: chatRequest.requestId },
+            );
+          }
+        }, 3_000);
+        if (checkId.unref) checkId.unref();
+      }
+      // Clean up session mapping
+      if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {
+        activeSessions.delete(chatRequest.sessionId);
       }
     },
   });
