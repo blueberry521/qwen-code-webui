@@ -406,6 +406,15 @@ export async function handleChatRequest(
         );
         existingAc.abort();
         requestAbortControllers.delete(existingRequestId);
+        // Resolve any pending permissions from the old request immediately
+        // rather than waiting for its finally block, so the new request's
+        // permission prompts don't collide with stale ones.
+        for (const [permissionId, pending] of pendingPermissions) {
+          if (pending.abortSignal === existingAc.signal) {
+            pending.resolve({ behavior: "deny", message: "Request superseded by new session request" });
+            pendingPermissions.delete(permissionId);
+          }
+        }
       }
       activeSessions.delete(chatRequest.sessionId);
     }
@@ -476,16 +485,20 @@ export async function handleChatRequest(
         );
         ac.abort();
 
-        // Defense: log warning if subprocess may still be alive after 3s.
-        // The SDK's transport.close() sends SIGTERM, then SIGKILL after 5s,
-        // but the gap can allow a resumed session to spawn a second CLI process.
+        // Log diagnostic 3s after cancel. The SDK's transport.close() sends
+        // SIGTERM, then SIGKILL after 5s. Log unconditionally to capture
+        // cases where the subprocess outlives the abort signal cleanup.
+        const diagRequestId = chatRequest.requestId;
         const checkId = setTimeout(() => {
-          if (requestAbortControllers.has(chatRequest.requestId)) {
-            logger.chat.warn(
-              "[DIAG] Subprocess may still be alive 3s after cancel requestId={requestId}",
-              { requestId: chatRequest.requestId },
-            );
-          }
+          logger.chat.warn(
+            "[DIAG] Post-cancel check requestId={requestId} activeCount={activeCount} "
+            + "concurrentRequests={concurrentRequests}",
+            {
+              requestId: diagRequestId,
+              activeCount: _activeChatCount,
+              concurrentRequests: requestAbortControllers.size,
+            },
+          );
         }, 3_000);
         if (checkId.unref) checkId.unref();
       }
