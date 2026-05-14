@@ -810,6 +810,7 @@ export function ChatPage() {
   const handleAbort = useCallback(() => {
     if (isRemoteWorkspace && remoteChat.session) {
       remoteChat.abortCurrentRequest();
+      resetRequestState();
       return;
     }
     abortRequest(currentRequestId, isLoading, resetRequestState);
@@ -1193,6 +1194,7 @@ export function ChatPage() {
         aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
         remoteChat.abortCurrentRequest();
+        resetRequestState();
         aborted = true;
       }
 
