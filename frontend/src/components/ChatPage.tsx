@@ -291,8 +291,6 @@ export function ChatPage() {
             setHasReceivedInit,
             shouldShowInitMessage: () => !hasShownInitMessage,
             onInitMessageShown: () => setHasShownInitMessage(true),
-            onPermissionError: (toolName, patterns, toolUseId) =>
-              permissionErrorRef.current?.(toolName, patterns, toolUseId),
             onCommandResultLoop: (...args) => commandLoopCheckRef.current?.(...args) ?? null,
             onShowCommandLoopRequest: (request) => {
               notificationTriggeredRef.current = true;
@@ -656,7 +654,6 @@ export function ChatPage() {
             localHasReceivedInit = received;
             setHasReceivedInit(received);
           },
-          onPermissionError: handlePermissionError,
           onAbortRequest: async () => {
             shouldAbort = true;
             await createAbortHandler(requestId)();
