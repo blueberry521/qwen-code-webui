@@ -7,7 +7,6 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import process from "node:process";
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
 import type { CommandResult, Runtime } from "./types.ts";
 import type { MiddlewareHandler } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -108,21 +107,14 @@ export class NodeRuntime implements Runtime {
   async serve(
     port: number,
     hostname: string,
-    handler: (req: Request) => Response | Promise<Response>,
+    handler: (req: Request, env?: unknown) => Response | Promise<Response>,
   ): Promise<void> {
-    // Use Hono with Node.js server to handle Web API Request/Response
-    const app = new Hono();
-
-    // Route all requests to the provided handler
-    app.all("*", async (c) => {
-      const response = await handler(c.req.raw);
-      return response;
-    });
-
-    // Start the server using @hono/node-server
-    // The serve function returns a server instance that keeps the process alive
+    // Pass handler directly to @hono/node-server so that
+    // { incoming, outgoing } Node.js bindings are available as c.env
+    // in Hono handlers. The previous double-wrapping via a separate
+    // Hono().all("*", ...) discarded these bindings.
     const server = serve({
-      fetch: app.fetch,
+      fetch: handler,
       port,
       hostname,
       serverOptions: {
