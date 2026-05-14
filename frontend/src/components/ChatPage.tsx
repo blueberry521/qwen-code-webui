@@ -1193,6 +1193,7 @@ export function ChatPage() {
         aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
         remoteChat.abortCurrentRequest();
+        resetRequestState();
         aborted = true;
       }
 

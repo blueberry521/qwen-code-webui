@@ -49,6 +49,17 @@ export function useRemoteChat(options?: RemoteChatOptions) {
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  // Clear orphaned streaming state (thinking/assistant) from StreamingContext
+  const clearStreamingState = useCallback(() => {
+    const opts = optionsRef.current;
+    if (opts?.streamingContext?.setCurrentThinkingMessage) {
+      opts.streamingContext.setCurrentThinkingMessage(null);
+    }
+    if (opts?.streamingContext?.setCurrentAssistantMessage) {
+      opts.streamingContext.setCurrentAssistantMessage(null);
+    }
+  }, []);
+
   /**
    * Shared SSE line handler — detects permission_request events, result
    * events, and forwards regular output via onStreamLine.
@@ -136,6 +147,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
               console.error("[useRemoteChat] SSE error:", err);
               setError(t("chat.remoteDisconnected"));
               setIsLoading(false);
+              clearStreamingState();
               setSession((prev) =>
                 prev ? { ...prev, status: "error" } : null
               );
@@ -143,6 +155,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             () => {
               console.log("[useRemoteChat] SSE done");
               setIsLoading(false);
+              clearStreamingState();
               // If the session was active and SSE closed, it likely means
               // the server was restarted or the session was marked completed.
               if (session?.status === "active") {
@@ -261,6 +274,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
               console.error("[useRemoteChat] SSE error:", err);
               setError(t("chat.remoteReconnectFailed"));
               setIsLoading(false);
+              clearStreamingState();
               setSession((prev) =>
                 prev ? { ...prev, status: "error" } : null
               );
@@ -268,6 +282,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             () => {
               console.log("[useRemoteChat] SSE done");
               setIsLoading(false);
+              clearStreamingState();
             },
           );
           eventSourceRef.current = es;
@@ -321,10 +336,11 @@ export function useRemoteChat(options?: RemoteChatOptions) {
     try {
       await abortRemoteRequest(session.session_id);
       setIsLoading(false);
+      clearStreamingState();
     } catch (err) {
       console.error("[useRemoteChat] Failed to abort request:", err);
     }
-  }, [session]);
+  }, [session, clearStreamingState]);
 
   const stopSessionHandler = useCallback(async () => {
     if (!session) return;
