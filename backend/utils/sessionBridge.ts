@@ -13,12 +13,18 @@ import { join, dirname } from "node:path";
 import { getHomeDir } from "./os.ts";
 import { logger } from "./logger.ts";
 
+/** Max recursion depth for copyDir to prevent symlink cycles */
+const MAX_COPY_DEPTH = 10;
+
 /**
- * Encode a project path to match the directory naming convention.
- * Both Claude Code and qwen replace '/', '\', ':', '.', '_' with '-'.
+ * Encode a project path to match the directory naming convention used by
+ * both CLIs. Replaces all non-alphanumeric characters with '-'.
+ *
+ * Must match qwen-code-cli: core/src/utils/paths.ts → sanitizeCwd()
+ * which uses: cwd.replace(/[^a-zA-Z0-9]/g, '-')
  */
 function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/\/$/, "").replace(/[/\\:._]/g, "-");
+  return projectPath.replace(/\/$/, "").replace(/[^a-zA-Z0-9]/g, "-");
 }
 
 /**
@@ -44,19 +50,24 @@ function getClaudeSessionPath(workingDirectory: string, sessionId: string): stri
 }
 
 /**
- * Recursively copy a directory.
+ * Recursively copy a directory with symlink and depth protection.
  */
-async function copyDir(src: string, dest: string): Promise<void> {
+async function copyDir(src: string, dest: string, depth = 0): Promise<void> {
+  if (depth > MAX_COPY_DEPTH) {
+    logger.chat.warn("copyDir: max depth exceeded at {src}, skipping", { src });
+    return;
+  }
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = join(src, entry.name);
     const destPath = join(dest, entry.name);
-    if (entry.isDirectory()) {
-      await copyDir(srcPath, destPath);
-    } else {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      await copyDir(srcPath, destPath, depth + 1);
+    } else if (entry.isFile()) {
       await fs.copyFile(srcPath, destPath);
     }
+    // Skip symlinks to prevent cycle traversal
   }
 }
 
@@ -111,7 +122,7 @@ export async function bridgeSession(
     try {
       const entries = await fs.readdir(claudeSessionDir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.isDirectory()) {
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
           const srcDir = join(claudeSessionDir, entry.name);
           const destDir = join(qwenSessionDir, entry.name);
           await copyDir(srcDir, destDir);

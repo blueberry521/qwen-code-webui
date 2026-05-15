@@ -442,6 +442,7 @@ export async function handleChatRequest(
       "Session bridged: original={originalSessionId} effective={effectiveSessionId}",
       { originalSessionId: chatRequest.sessionId, effectiveSessionId: bridgedSessionId },
     );
+    // Intentionally mutate request to update sessionId for downstream use
     chatRequest.sessionId = bridgedSessionId ?? undefined;
   }
 

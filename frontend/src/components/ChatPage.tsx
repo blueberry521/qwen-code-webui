@@ -310,7 +310,13 @@ export function ChatPage() {
               onThinkingTimeout: (content, info) => thinkingTimeoutRef.current?.(content, info),
             },
             // Clear stale sessionId on stream errors
-            onStreamError: () => { setCurrentSessionId(null); },
+            // Only clear sessionId on fatal errors, keep for transient ones
+            onStreamError: (error: string) => {
+              const fatalPatterns = ["exit", "session", "not found", "input closed"];
+              if (fatalPatterns.some(p => error.toLowerCase().includes(p))) {
+                setCurrentSessionId(null);
+              }
+            },
           },
           onPermissionRequest: (event) => {
             // Forward remote CLI permission request to the existing permission panel
@@ -700,9 +706,15 @@ export function ChatPage() {
           },
           // Track normal completion (result message received)
           onResultReceived: () => { receivedResult = true; },
-          // Clear stale sessionId on stream errors (e.g. CLI crash) so next
-          // request creates a fresh session instead of retrying a dead one
-          onStreamError: () => { setCurrentSessionId(null); },
+          // Clear stale sessionId only on fatal stream errors (CLI crash, session
+          // not found) — transient errors (network blip, timeout) keep sessionId
+          // to allow resume on retry
+          onStreamError: (error: string) => {
+            const fatalPatterns = ["exit", "session", "not found", "input closed"];
+            if (fatalPatterns.some(p => error.toLowerCase().includes(p))) {
+              setCurrentSessionId(null);
+            }
+          },
         };
 
         let lineBuffer = "";
