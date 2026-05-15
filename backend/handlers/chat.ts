@@ -3,6 +3,7 @@ import { query, type PermissionMode, type AuthType, type PermissionResult } from
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
+import { bridgeSession } from "../utils/sessionBridge.ts";
 import type { PendingPermission } from "./permission.ts";
 import type { ServerResponse } from "node:http";
 
@@ -251,6 +252,7 @@ async function executeQwenCommand(
         ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
         ...(model ? { model } : {}),
         ...(authType ? { authType } : {}),
+        stderr: true,
         canUseTool,
         timeout: { canUseTool: SESSION_TIMEOUT_MS, controlRequest: SESSION_TIMEOUT_MS },
       },
@@ -427,6 +429,21 @@ export async function handleChatRequest(
       activeSessions.delete(chatRequest.sessionId);
     }
     activeSessions.set(chatRequest.sessionId, chatRequest.requestId);
+  }
+
+  // Bridge session from Claude Code directory if not found in qwen directory.
+  // This allows resuming Claude Code sessions that were loaded from history.
+  const bridgedSessionId = await bridgeSession(
+    chatRequest.workingDirectory,
+    chatRequest.sessionId,
+  );
+  if (bridgedSessionId !== chatRequest.sessionId) {
+    logger.chat.info(
+      "Session bridged: original={originalSessionId} effective={effectiveSessionId}",
+      { originalSessionId: chatRequest.sessionId, effectiveSessionId: bridgedSessionId },
+    );
+    // Intentionally mutate request to update sessionId for downstream use
+    chatRequest.sessionId = bridgedSessionId ?? undefined;
   }
 
   const encoder = new TextEncoder();

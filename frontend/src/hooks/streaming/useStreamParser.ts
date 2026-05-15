@@ -295,6 +295,7 @@ export function useStreamParser() {
             timestamp: Date.now(),
           };
           context.addMessage(errorMessage);
+          context.onStreamError?.(data.error || "Unknown error");
         } else if (data.type === "aborted") {
           const abortedMessage: AbortMessage = {
             type: "system",

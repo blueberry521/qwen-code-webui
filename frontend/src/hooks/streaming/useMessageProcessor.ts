@@ -61,6 +61,8 @@ export interface StreamingContext {
   thinkingTimeout?: ThinkingTimeoutInfo;
   // Called when a 'result' message is received — signals normal completion
   onResultReceived?: () => void;
+  // Called when a stream error is received — allows clearing stale sessionId
+  onStreamError?: (error: string) => void;
 }
 
 /**
