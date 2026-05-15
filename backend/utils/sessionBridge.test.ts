@@ -2,9 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
 
-// Mock os module to return a fixed home directory
+// Mock os module with vi.fn to allow per-test overrides
 vi.mock("./os.ts", () => ({
-  getHomeDir: () => "/mock/home",
+  getHomeDir: vi.fn(() => "/mock/home"),
 }));
 
 // Mock logger
@@ -20,25 +20,36 @@ vi.mock("./logger.ts", () => ({
 }));
 
 // Import after mocks are set up
-import { bridgeSession } from "./sessionBridge.ts";
+import { bridgeSession, encodeProjectPath } from "./sessionBridge.ts";
 
-// Helpers to construct expected paths
+// Helpers to construct expected paths using the production encoding
 const QWEN_BASE = "/mock/home/.qwen/projects";
 const CLAUDE_BASE = "/mock/home/.claude/projects";
 
-function encodePath(p: string): string {
-  return p.replace(/\/$/, "").replace(/[^a-zA-Z0-9]/g, "-");
-}
-
 function qwenSessionPath(cwd: string, sid: string) {
-  return join(QWEN_BASE, encodePath(cwd), "chats", `${sid}.jsonl`);
+  return join(QWEN_BASE, encodeProjectPath(cwd), "chats", `${sid}.jsonl`);
 }
 
 function claudeSessionPath(cwd: string, sid: string) {
-  return join(CLAUDE_BASE, encodePath(cwd), `${sid}.jsonl`);
+  return join(CLAUDE_BASE, encodeProjectPath(cwd), `${sid}.jsonl`);
 }
 
-describe("sessionBridge", () => {
+describe("encodeProjectPath", () => {
+  it("replaces all non-alphanumeric chars with dash (matches CLI sanitizeCwd)", () => {
+    expect(encodeProjectPath("/Users/dev/my project@v2"))
+      .toBe("-Users-dev-my-project-v2");
+    expect(encodeProjectPath("/Users/dev/open-ace"))
+      .toBe("-Users-dev-open-ace");
+    expect(encodeProjectPath("/path/with.dots_and:colons"))
+      .toBe("-path-with-dots-and-colons");
+  });
+
+  it("strips trailing slash before encoding", () => {
+    expect(encodeProjectPath("/Users/dev/")).toBe("-Users-dev");
+  });
+});
+
+describe("bridgeSession", () => {
   const mockCwd = "/Users/dev/project";
   const mockSid = "abc-123-def";
 
@@ -67,7 +78,6 @@ describe("sessionBridge", () => {
     const qwenPath = qwenSessionPath(mockCwd, mockSid);
     const claudePath = claudeSessionPath(mockCwd, mockSid);
 
-    // qwen path doesn't exist, claude path exists
     vi.spyOn(fs, "access")
       .mockRejectedValueOnce(new Error("not found")) // qwen
       .mockResolvedValueOnce(undefined); // claude
@@ -91,18 +101,18 @@ describe("sessionBridge", () => {
     expect(result).toBe(undefined);
   });
 
-  it("returns original sessionId on unexpected errors (non-blocking)", async () => {
-    vi.spyOn(fs, "access").mockRejectedValueOnce(new Error("permission denied"));
-    vi.spyOn(fs, "access").mockRejectedValueOnce(new Error("permission denied"));
+  it("returns original sessionId when outer catch handles unexpected error", async () => {
+    // Trigger outer catch by making getHomeDir return undefined, causing
+    // getQwenSessionPath to throw "Home directory not found"
+    const os = await import("./os.ts");
+    vi.mocked(os.getHomeDir).mockReturnValueOnce(undefined);
 
     const result = await bridgeSession(mockCwd, mockSid);
-    // Falls through to catch which returns original sessionId
-    expect(result).toBe(undefined);
+    // Outer catch returns original sessionId to avoid blocking the request
+    expect(result).toBe(mockSid);
   });
 
   it("copies subdirectories when they exist", async () => {
-    const claudeDir = claudeSessionPath(mockCwd, mockSid).replace(/\.jsonl$/, "");
-
     vi.spyOn(fs, "access")
       .mockRejectedValueOnce(new Error("not found")) // qwen
       .mockResolvedValueOnce(undefined); // claude
@@ -110,25 +120,20 @@ describe("sessionBridge", () => {
     vi.spyOn(fs, "mkdir").mockResolvedValue(undefined);
     vi.spyOn(fs, "copyFile").mockResolvedValue(undefined);
 
-    // readdir returns subdirectory entries
     vi.spyOn(fs, "readdir")
       .mockResolvedValueOnce([
         { name: "subagents", isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false },
         { name: "tool-results", isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false },
       ] as fs.Dirent[])
-      // copyDir calls for each subdirectory
       .mockResolvedValue([] as fs.Dirent[])
       .mockResolvedValue([] as fs.Dirent[]);
 
     const result = await bridgeSession(mockCwd, mockSid);
     expect(result).toBe(mockSid);
-    // mkdir called for qwen chats dir + 2 subdirectories
     expect(fs.mkdir).toHaveBeenCalledTimes(3);
   });
 
   it("skips symlinks when copying subdirectories", async () => {
-    const claudeDir = claudeSessionPath(mockCwd, mockSid).replace(/\.jsonl$/, "");
-
     vi.spyOn(fs, "access")
       .mockRejectedValueOnce(new Error("not found")) // qwen
       .mockResolvedValueOnce(undefined); // claude
@@ -142,17 +147,17 @@ describe("sessionBridge", () => {
 
     const result = await bridgeSession(mockCwd, mockSid);
     expect(result).toBe(mockSid);
-    // Only mkdir for chats dir, not for symlink
     expect(fs.mkdir).toHaveBeenCalledTimes(1);
   });
 
-  it("encodes paths correctly matching CLI sanitizeCwd", async () => {
-    const specialCwd = "/Users/dev/my project@v2";
-    const encoded = encodePath(specialCwd);
+  it("uses production encodeProjectPath for path construction", async () => {
+    const specialCwd = "/Users/dev/my project";
+    const encoded = encodeProjectPath(specialCwd);
 
-    // All non-alphanumeric chars should be replaced with '-'
-    expect(encoded).toBe("-Users-dev-my-project-v2");
+    // Verify spaces are encoded (the production function handles this)
     expect(encoded).not.toContain(" ");
-    expect(encoded).not.toContain("@");
+
+    const qwenPath = qwenSessionPath(specialCwd, mockSid);
+    expect(qwenPath).toContain(encoded);
   });
 });

@@ -61,6 +61,15 @@ interface QuotaStatus {
   daily?: QuotaPeriodStatus;
 }
 
+/** Error patterns that indicate a fatal session failure requiring sessionId reset */
+const FATAL_SESSION_ERROR_PATTERNS = [
+  "exited with",
+  "exit code",
+  "session",
+  "not found",
+  "input closed",
+];
+
 export function ChatPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -312,8 +321,7 @@ export function ChatPage() {
             // Clear stale sessionId on stream errors
             // Only clear sessionId on fatal errors, keep for transient ones
             onStreamError: (error: string) => {
-              const fatalPatterns = ["exit", "session", "not found", "input closed"];
-              if (fatalPatterns.some(p => error.toLowerCase().includes(p))) {
+              if (FATAL_SESSION_ERROR_PATTERNS.some(p => error.toLowerCase().includes(p))) {
                 setCurrentSessionId(null);
               }
             },
@@ -710,8 +718,7 @@ export function ChatPage() {
           // not found) — transient errors (network blip, timeout) keep sessionId
           // to allow resume on retry
           onStreamError: (error: string) => {
-            const fatalPatterns = ["exit", "session", "not found", "input closed"];
-            if (fatalPatterns.some(p => error.toLowerCase().includes(p))) {
+            if (FATAL_SESSION_ERROR_PATTERNS.some(p => error.toLowerCase().includes(p))) {
               setCurrentSessionId(null);
             }
           },

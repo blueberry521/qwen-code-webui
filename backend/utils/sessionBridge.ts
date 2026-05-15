@@ -23,7 +23,7 @@ const MAX_COPY_DEPTH = 10;
  * Must match qwen-code-cli: core/src/utils/paths.ts → sanitizeCwd()
  * which uses: cwd.replace(/[^a-zA-Z0-9]/g, '-')
  */
-function encodeProjectPath(projectPath: string): string {
+export function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/\/$/, "").replace(/[^a-zA-Z0-9]/g, "-");
 }
 
