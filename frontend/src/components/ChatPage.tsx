@@ -309,6 +309,8 @@ export function ChatPage() {
             thinkingTimeout: {
               onThinkingTimeout: (content, info) => thinkingTimeoutRef.current?.(content, info),
             },
+            // Clear stale sessionId on stream errors
+            onStreamError: () => { setCurrentSessionId(null); },
           },
           onPermissionRequest: (event) => {
             // Forward remote CLI permission request to the existing permission panel
@@ -698,6 +700,9 @@ export function ChatPage() {
           },
           // Track normal completion (result message received)
           onResultReceived: () => { receivedResult = true; },
+          // Clear stale sessionId on stream errors (e.g. CLI crash) so next
+          // request creates a fresh session instead of retrying a dead one
+          onStreamError: () => { setCurrentSessionId(null); },
         };
 
         let lineBuffer = "";
