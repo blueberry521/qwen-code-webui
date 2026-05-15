@@ -45,10 +45,12 @@ function RootRedirect() {
 }
 
 function App() {
+  const raw = window.__WEBUI_BASENAME__;
+  const basename = typeof raw === "string" && raw ? raw : undefined;
   return (
     <SettingsProvider>
       <GlobalEscHandler>
-        <Router>
+        <Router basename={basename}>
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/projects/*" element={<ChatPage />} />
