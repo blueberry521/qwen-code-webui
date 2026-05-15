@@ -45,7 +45,8 @@ function RootRedirect() {
 }
 
 function App() {
-  const basename = (window as any).__WEBUI_BASENAME__ as string | undefined;
+  const raw = window.__WEBUI_BASENAME__;
+  const basename = typeof raw === "string" && raw ? raw : undefined;
   return (
     <SettingsProvider>
       <GlobalEscHandler>
