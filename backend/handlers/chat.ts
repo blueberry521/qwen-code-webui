@@ -252,7 +252,9 @@ async function executeQwenCommand(
         ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
         ...(model ? { model } : {}),
         ...(authType ? { authType } : {}),
-        stderr: true,
+        stderr: (message: string) => {
+          logger.chat.info("CLI stderr: {message}", { message });
+        },
         canUseTool,
         timeout: { canUseTool: SESSION_TIMEOUT_MS, controlRequest: SESSION_TIMEOUT_MS },
       },
