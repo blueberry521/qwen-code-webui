@@ -1,7 +1,7 @@
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import type { TFunction } from "i18next";
 import type { CSSProperties } from "react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { JSX } from "react";
 import { extractBaseCommand } from "../../utils/toolUtils";
@@ -141,6 +141,8 @@ interface PermissionInputPanelProps {
   ) => string;
   onSelectionChange?: (selection: "allow" | "allowPermanent" | "deny") => void;
   externalSelectedOption?: "allow" | "allowPermanent" | "deny" | null;
+  /** When set, show a countdown and auto-approve (first option) after this many ms. */
+  autoApproveMs?: number;
 }
 
 type Option = "allow" | "allowPermanent" | "deny";
@@ -156,12 +158,53 @@ export function PermissionInputPanel({
   getButtonClassName = (_, defaultClassName) => defaultClassName,
   onSelectionChange,
   externalSelectedOption,
+  autoApproveMs,
 }: PermissionInputPanelProps) {
   const { t } = useTranslation();
   const [selectedOption, setSelectedOption] = useState<Option>("allow");
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const autoApprovedRef = useRef(false);
+  const countdownCancelledRef = useRef(false);
 
   const effectiveSelectedOption = externalSelectedOption ?? selectedOption;
   const isShellCommand = toolName === "run_shell_command";
+
+  // Cancel countdown when user manually clicks any button
+  const cancelCountdown = useCallback(() => {
+    countdownCancelledRef.current = true;
+    setCountdown(null);
+  }, []);
+
+  // Countdown timer: auto-approve when it reaches zero
+  useEffect(() => {
+    if (!autoApproveMs) return;
+    const seconds = Math.ceil(autoApproveMs / 1000);
+    setCountdown(seconds);
+
+    const interval = setInterval(() => {
+      if (countdownCancelledRef.current) {
+        clearInterval(interval);
+        return;
+      }
+      setCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [autoApproveMs]);
+
+  // Fire auto-approve when countdown hits 0 (unless user already acted)
+  useEffect(() => {
+    if (countdown === 0 && !autoApprovedRef.current && !countdownCancelledRef.current) {
+      autoApprovedRef.current = true;
+      onAllow();
+    }
+  }, [countdown, onAllow]);
 
   const updateSelectedOption = useCallback(
     (option: Option) => {
@@ -192,18 +235,20 @@ export function PermissionInputPanel({
         updateSelectedOption(options[prevIndex]);
       } else if (e.key === "Enter" && effectiveSelectedOption) {
         e.preventDefault();
+        cancelCountdown();
         if (effectiveSelectedOption === "allow") onAllow();
         else if (effectiveSelectedOption === "allowPermanent") onAllowPermanent();
         else if (effectiveSelectedOption === "deny") onDeny();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        cancelCountdown();
         onDeny();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [effectiveSelectedOption, onAllow, onAllowPermanent, onDeny, updateSelectedOption, externalSelectedOption]);
+  }, [effectiveSelectedOption, onAllow, onAllowPermanent, onDeny, cancelCountdown, updateSelectedOption, externalSelectedOption]);
 
   const selectedStyles: Record<Option, { className: string; style: React.CSSProperties }> = {
     allow: {
@@ -259,6 +304,21 @@ export function PermissionInputPanel({
         </p>
       </div>
 
+      {/* Countdown banner */}
+      {countdown !== null && countdown > 0 && (
+        <div className="mb-3 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+            {t("permission.autoApproveCountdown", { seconds: countdown })}
+          </p>
+          <div className="mt-1 h-1 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 dark:bg-blue-400 rounded-full transition-all duration-1000 ease-linear"
+              style={{ width: `${(countdown / Math.ceil((autoApproveMs ?? 25000) / 1000)) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Buttons */}
       <div className="space-y-2">
         {buttons.map(({ key, label, action }) => {
@@ -268,7 +328,7 @@ export function PermissionInputPanel({
             <button
               key={key}
               data-permission-action={key}
-              onClick={() => action()}
+              onClick={() => { cancelCountdown(); action(); }}
               onMouseEnter={() => updateSelectedOption(key)}
               className={getButtonClassName(
                 key,
