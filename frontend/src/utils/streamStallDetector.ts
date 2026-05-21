@@ -13,7 +13,7 @@ export interface StallDetector {
 
 export function createStallDetector(
   abortController: AbortController,
-  timeoutMs: number = 60_000,
+  timeoutMs: number = 120_000,
 ): StallDetector {
   let stallTimerId: ReturnType<typeof setTimeout> | null = null;
   let lastDataTime = Date.now();

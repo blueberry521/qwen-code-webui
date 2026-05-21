@@ -21,8 +21,8 @@ const activeSessions = new Map<string, string>();
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 
 /**
- * Keepalive heartbeat interval. Frontend stall detector triggers after 60s
- * of silence, so 4 missed heartbeats (4 × 15s) = stall detected.
+ * Keepalive heartbeat interval. Frontend stall detector triggers after 120s
+ * of silence, so 8 missed heartbeats (8 × 15s) = stall detected.
  */
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
@@ -485,10 +485,29 @@ export async function handleChatRequest(
       };
 
       // Send keepalive heartbeat to prevent browser timeout (ERR_INCOMPLETE_CHUNKED_ENCODING)
-      // and stall detector false positives. Using a JSON heartbeat instead of bare \n
-      // because structured NDJSON is more likely to be flushed as a complete chunk.
+      // and stall detector false positives.
+      //
+      // CRITICAL: Write directly to the ServerResponse (`outgoing`) instead of
+      // controller.enqueue(). The @hono/node-server stream consumer reads from
+      // the ReadableStream asynchronously via reader.read() → writable.write().
+      // When the Node.js event loop is busy with SDK processing, the consumer's
+      // reader.read() promise may not resolve promptly, causing enqueued heartbeats
+      // to sit in the stream's internal queue unread. Direct ServerResponse.write()
+      // bypasses this buffering and hits the TCP socket immediately (setNoDelay is
+      // already enabled). Node.js ServerResponse transparently applies chunked
+      // encoding framing to each write(), so this is safe alongside the stream
+      // consumer's writes — they never overlap because JS is single-threaded.
       keepaliveId = setInterval(() => {
-        try { controller.enqueue(encoder.encode('{"type":"heartbeat"}\n')); } catch { clearInterval(keepaliveId); }
+        try {
+          const heartbeat = encoder.encode('{"type":"heartbeat"}\n');
+          if (outgoing && !outgoing.writableEnded && !outgoing.destroyed) {
+            outgoing.write(heartbeat);
+            logger.chat.debug("[KEEPALIVE] Heartbeat sent directly to socket");
+          } else {
+            // Fallback: outgoing not available (e.g. tests) — use stream enqueue
+            controller.enqueue(heartbeat);
+          }
+        } catch { clearInterval(keepaliveId); }
       }, KEEPALIVE_INTERVAL_MS);
 
       try {

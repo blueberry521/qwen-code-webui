@@ -311,6 +311,7 @@ export function useStreamParser() {
         } else if (data.type === "heartbeat") {
           // Backend keepalive — resets stall detector via stallDetector.onData()
           // in ChatPage.tsx (called before this function). Nothing to do here.
+          console.debug("[Keepalive] Heartbeat received at", new Date().toISOString());
         }
       } catch (parseError) {
         console.error("Failed to parse stream line:", parseError);

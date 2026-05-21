@@ -609,8 +609,8 @@ export function ChatPage() {
       let receivedResult = false;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
-      // Stream stall detection: abort fetch if no data received for 60s.
-      // Backend sends keepalive \n every 15s, so 60s = 4 missed keepalives.
+      // Stream stall detection: abort fetch if no data received for 120s.
+      // Backend sends heartbeat every 15s, so 120s = 8 missed heartbeats.
       const fetchAbortController = new AbortController();
       const stallDetector = createStallDetector(fetchAbortController);
 
