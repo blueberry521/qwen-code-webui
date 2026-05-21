@@ -56,6 +56,7 @@ export interface StreamingContext {
     toolName: string;
     toolInput: Record<string, unknown>;
     suggestions: Array<{ type: string; label: string; description?: string }>;
+    autoApproveMs?: number;
   }) => void;
   // Cleanup orphan permission dialogs after SDK timeout/stream resume
   onPermissionOrphanCleanup?: () => void;
