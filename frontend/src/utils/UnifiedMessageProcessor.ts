@@ -63,13 +63,15 @@ export interface ProcessingContext {
   onAutoRejection?: (
     toolName: string,
     content: string,
+    agentId?: string,
   ) => CommandLoopRequest | null;
 
   // Command result loop detection
   onCommandResultLoop?: (
     toolName: string,
     input: Record<string, unknown>,
-    result: { exitCode?: number; output: string }
+    result: { exitCode?: number; output: string },
+    agentId?: string,
   ) => CommandLoopRequest | null;
   onShowCommandLoopRequest?: (request: CommandLoopRequest) => void;
 
@@ -148,15 +150,16 @@ export class UnifiedMessageProcessor {
     context: ProcessingContext,
     options: ProcessingOptions,
     toolUseResult?: unknown,
+    agentId?: string,
   ): void {
     // Get cached tool_use information to determine tool name
     const toolUseId = contentItem.tool_use_id || "";
-    
+
     // Deduplication: check if this tool_result has already been processed
     if (this.processedToolResults.has(toolUseId)) {
       return;
     }
-    
+
     // Mark this tool_result as processed
     this.processedToolResults.add(toolUseId);
 
@@ -169,6 +172,8 @@ export class UnifiedMessageProcessor {
     // permission dialogs. The proactive canUseTool flow handles real permission
     // requests; execution errors (file_not_found etc.) should pass through as
     // normal tool results so the model can adjust. See issue #127.
+    // agentId scopes loop detection per-agent so parallel fork agents don't
+    // accumulate toward the same counter (#140).
     if (
       options.isStreaming &&
       contentItem.is_error &&
@@ -183,7 +188,7 @@ export class UnifiedMessageProcessor {
           cachedToolInfo?.name,
           cachedToolInfo?.input,
         );
-        const loopRequest = context.onAutoRejection(toolName, content);
+        const loopRequest = context.onAutoRejection(toolName, content, agentId);
         if (loopRequest && context.onShowCommandLoopRequest) {
           if (context.onAbortRequest) {
             context.onAbortRequest();
@@ -199,14 +204,14 @@ export class UnifiedMessageProcessor {
     const toolName = cachedToolInfo?.name || "Tool";
     const toolInput = cachedToolInfo?.input || {};
 
-    // Check for command result loop detection (streaming only)
+    // Check for command result loop detection (streaming only, scoped per agentId)
     if (options.isStreaming && context.onCommandResultLoop) {
       // Extract exit code and output from tool result
       const exitCode = this.extractExitCode(toolUseResult, content);
       const loopRequest = context.onCommandResultLoop(toolName, toolInput, {
         exitCode,
         output: content,
-      });
+      }, agentId);
 
       if (loopRequest && context.onShowCommandLoopRequest) {
         // Loop detected - show dialog and stop processing
@@ -657,6 +662,8 @@ export class UnifiedMessageProcessor {
             },
             localContext,
             options,
+            undefined,
+            message.parent_tool_use_id || undefined,
           );
         } else if (part.text && !message.parent_tool_use_id) {
           // Text content in parts — skip if parent_tool_use_id is set
@@ -681,6 +688,7 @@ export class UnifiedMessageProcessor {
             localContext,
             options,
             toolUseResult,
+            message.parent_tool_use_id || undefined,
           );
         } else if (contentItem.type === "text" && !message.parent_tool_use_id) {
           // Regular text content — skip if parent_tool_use_id is set
@@ -721,7 +729,9 @@ export class UnifiedMessageProcessor {
     const msg = message as unknown as {
       message?: { parts?: unknown[] };
       toolCallResult?: { callId?: string; status?: string; resultDisplay?: string };
+      parent_tool_use_id?: string | null;
     };
+    const agentId = msg.parent_tool_use_id || undefined;
 
     // Extract tool_use_id and content from functionResponse in parts
     const messageParts = msg.message?.parts;
@@ -761,6 +771,7 @@ export class UnifiedMessageProcessor {
             context,
             options,
             msg.toolCallResult,
+            agentId,
           );
         }
       }

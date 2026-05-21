@@ -122,9 +122,10 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   const loopDetectionConfigRef = useRef(DEFAULT_LOOP_DETECTION_CONFIG);
 
   // Auto-rejection loop detection state (SDK-level rejections, e.g. stdin closed)
-  const autoRejectionCountRef = useRef(0);
-  const lastAutoRejectionToolRef = useRef<string>("");
-  const lastAutoRejectionTimeRef = useRef(0);
+  // Map-based per-agent counter: key = agentId:toolName (or just toolName for main session)
+  const autoRejectionStatesRef = useRef<
+    Map<string, { count: number; lastTime: number }>
+  >(new Map());
 
   // Command result loop detection state
   const commandResultLoopConfigRef = useRef(DEFAULT_COMMAND_RESULT_LOOP_CONFIG);
@@ -272,10 +273,13 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   }, []);
 
   /**
-   * Generate a key for command identification
+   * Generate a key for command identification, scoped per agentId.
+   * When agentId is provided (fork agent), it becomes a key prefix so
+   * each agent's loop counters are fully independent (#140).
    */
   const generateCommandKey = useCallback(
-    (toolName: string, input: Record<string, unknown>): string => {
+    (toolName: string, input: Record<string, unknown>, agentId?: string): string => {
+      const prefix = agentId ? `${agentId}:` : "";
       // For shell commands, use the command string
       if (input.command && typeof input.command === "string") {
         // Normalize command: remove path variations, keep core structure
@@ -283,11 +287,11 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
           .replace(/\s+/g, " ")
           .trim()
           .substring(0, 100);
-        return `${toolName}:${normalizedCommand}`;
+        return `${prefix}${toolName}:${normalizedCommand}`;
       }
       // For other tools, use JSON representation (truncated)
       const inputStr = JSON.stringify(input).substring(0, 100);
-      return `${toolName}:${inputStr}`;
+      return `${prefix}${toolName}:${inputStr}`;
     },
     []
   );
@@ -300,7 +304,8 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
     (
       toolName: string,
       input: Record<string, unknown>,
-      result: { exitCode?: number; output: string }
+      result: { exitCode?: number; output: string },
+      agentId?: string,
     ): CommandLoopRequest | null => {
       // Skip if loop detection is disabled for this session
       if (loopDetectionDisabledRef.current) {
@@ -325,12 +330,12 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
 
       if (!isError && !hasErrorKeywords) {
         // Clear tracking for successful results
-        const key = generateCommandKey(toolName, input);
+        const key = generateCommandKey(toolName, input, agentId);
         commandResultsRef.current.delete(key);
         return null;
       }
 
-      const key = generateCommandKey(toolName, input);
+      const key = generateCommandKey(toolName, input, agentId);
       const errorFingerprint = generateErrorFingerprint(result.output);
 
       // Get existing entry
@@ -403,24 +408,22 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   const disableCommandResultLoopDetection = useCallback(() => {
     commandResultsRef.current.clear();
     // Reset auto-rejection counters too
-    autoRejectionCountRef.current = 0;
-    lastAutoRejectionToolRef.current = "";
+    autoRejectionStatesRef.current.clear();
     closeCommandLoopRequest();
   }, [closeCommandLoopRequest]);
 
   /**
    * Record an auto-rejected tool call (SDK-level rejection, e.g. stdin closed)
    * Returns CommandLoopRequest if loop detected, null otherwise
+   * Each agent (main session or fork) maintains independent counters (#140).
    */
   const recordAutoRejection = useCallback(
-    (toolName: string, content: string): CommandLoopRequest | null => {
+    (toolName: string, content: string, agentId?: string): CommandLoopRequest | null => {
       const config = loopDetectionConfigRef.current;
       const now = Date.now();
 
-      // Reset counter if outside the time window
-      if (now - lastAutoRejectionTimeRef.current > config.resetWindowMs) {
-        autoRejectionCountRef.current = 0;
-      }
+      // Build a scoped key for agent isolation
+      const scopeKey = agentId ? `${agentId}:${toolName}` : toolName;
 
       // "Input closed" is a session-level fatal error — always detect immediately
       // Match the full SDK error format to avoid false positives from benign "Operation Cancelled"
@@ -428,8 +431,11 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       const isInputClosed = lowerContent.includes("input closed") ||
         (lowerContent.includes("operation cancelled") && lowerContent.includes("input closed"));
 
+      // "Input closed" is a session-level fatal error — always detect immediately.
+      // When this occurs the CLI process is dead, so the entire session tree
+      // (including all fork agents) is unusable regardless of which agent reported it.
       if (isInputClosed) {
-        autoRejectionCountRef.current = 0;
+        autoRejectionStatesRef.current.delete(scopeKey);
         return {
           isOpen: true,
           toolName,
@@ -443,19 +449,20 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       // Skip loop detection for excluded tools
       if (config.excludedTools.has(toolName)) return null;
 
-      // Check if same tracking key as last auto-rejection
-      if (lastAutoRejectionToolRef.current === toolName) {
-        autoRejectionCountRef.current++;
-      } else {
-        autoRejectionCountRef.current = 1;
-        lastAutoRejectionToolRef.current = toolName;
-      }
+      // Get or create per-key state
+      const states = autoRejectionStatesRef.current;
+      const existing = states.get(scopeKey);
+      const state = existing && now - existing.lastTime <= config.resetWindowMs
+        ? existing
+        : { count: 0, lastTime: now };
 
-      lastAutoRejectionTimeRef.current = now;
+      state.count++;
+      state.lastTime = now;
+      states.set(scopeKey, state);
 
       // Check threshold
-      if (autoRejectionCountRef.current >= config.maxConsecutiveDenials) {
-        autoRejectionCountRef.current = 0;
+      if (state.count >= config.maxConsecutiveDenials) {
+        states.delete(scopeKey);
         return {
           isOpen: true,
           toolName,
@@ -473,8 +480,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
    * Reset the auto-rejection counter
    */
   const resetAutoRejectionCounter = useCallback(() => {
-    autoRejectionCountRef.current = 0;
-    lastAutoRejectionToolRef.current = "";
+    autoRejectionStatesRef.current.clear();
   }, []);
 
   return {

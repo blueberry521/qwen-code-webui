@@ -778,6 +778,149 @@ describe("UnifiedMessageProcessor - Qwen SDK Format", () => {
       expect(loopCheckCalls[0].toolName).toBe("run_shell_command");
     });
 
+    it("should pass agentId for fork agent auto-rejection loop detection", () => {
+      const processor = createProcessor();
+      const autoRejectionCalls: Array<{ toolName: string; content: string; agentId?: string }> = [];
+
+      const context = createMockContext({
+        onAutoRejection: (toolName, content, agentId) => {
+          autoRejectionCalls.push({ toolName, content, agentId });
+          return null;
+        },
+        onAbortRequest: () => {},
+      });
+
+      // Send tool call from main session
+      sendFunctionCall(processor, context, "fork-err-1", "run_shell_command", {
+        command: "git diff main...HEAD",
+      });
+
+      // Send error result via top-level tool_result with parent_tool_use_id (fork agent)
+      processor.processMessage(
+        {
+          type: "tool_result",
+          message: {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  id: "fork-err-1",
+                  name: "run_shell_command",
+                  response: { error: "[Operation Cancelled] Reason: Error: Input closed" },
+                },
+              },
+            ],
+          },
+          toolCallResult: {
+            callId: "fork-err-1",
+            status: "cancelled",
+            resultDisplay: "[Operation Cancelled]",
+          },
+          parent_tool_use_id: "call_agent_fork_1",
+        } as any,
+        context,
+        { isStreaming: true },
+      );
+
+      // Should trigger auto-rejection WITH agentId (not skipped)
+      expect(autoRejectionCalls).toHaveLength(1);
+      expect(autoRejectionCalls[0].agentId).toBe("call_agent_fork_1");
+    });
+
+    it("should pass agentId for fork agent command result loop detection", () => {
+      const processor = createProcessor();
+      const loopCheckCalls: Array<{ toolName: string; result: any; agentId?: string }> = [];
+
+      const context = createMockContext({
+        onCommandResultLoop: (toolName, _input, result, agentId) => {
+          loopCheckCalls.push({ toolName, result, agentId });
+          return null;
+        },
+      });
+
+      // Send tool call
+      sendFunctionCall(processor, context, "fork-cmd-1", "run_shell_command", {
+        command: "git diff main...HEAD",
+      });
+
+      // Send error result via top-level tool_result with parent_tool_use_id (fork agent)
+      processor.processMessage(
+        {
+          type: "tool_result",
+          message: {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  id: "fork-cmd-1",
+                  name: "run_shell_command",
+                  response: { output: "Exit Code: 1\nError: command failed" },
+                },
+              },
+            ],
+          },
+          toolCallResult: {
+            callId: "fork-cmd-1",
+            status: "error",
+            resultDisplay: "Exit Code: 1",
+          },
+          parent_tool_use_id: "call_agent_fork_2",
+        } as any,
+        context,
+        { isStreaming: true },
+      );
+
+      // Should trigger command result loop check WITH agentId (not skipped)
+      expect(loopCheckCalls).toHaveLength(1);
+      expect(loopCheckCalls[0].agentId).toBe("call_agent_fork_2");
+    });
+
+    it("should not trigger auto-rejection for non-error tool results (is_error=false path)", () => {
+      const processor = createProcessor();
+      const autoRejectionCalls: Array<{ toolName: string; content: string; agentId?: string }> = [];
+
+      const context = createMockContext({
+        onAutoRejection: (toolName, content, agentId) => {
+          autoRejectionCalls.push({ toolName, content, agentId });
+          return null;
+        },
+        onAbortRequest: () => {},
+      });
+
+      // Send tool call from main session using Qwen format (functionCall)
+      sendFunctionCall(processor, context, "fork-user-1", "run_shell_command", {
+        command: "git diff main...HEAD",
+      });
+
+      // Send result as user message with parent_tool_use_id (fork agent).
+      // The Qwen parts functionResponse path sets is_error=false, so
+      // auto-rejection should NOT be triggered (this is correct behavior —
+      // only tool_result messages with is_error=true trigger auto-rejection).
+      processor.processMessage(
+        {
+          type: "user",
+          message: {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  id: "fork-user-1",
+                  name: "run_shell_command",
+                  response: { error: "[Operation Cancelled] Reason: Error: Input closed" },
+                },
+              },
+            ],
+          },
+          parent_tool_use_id: "call_agent_fork_3",
+        } as any,
+        context,
+        { isStreaming: true },
+      );
+
+      // Should NOT trigger auto-rejection because is_error is false in this path
+      expect(autoRejectionCalls).toHaveLength(0);
+    });
+
     it("should handle streaming of Qwen format messages", () => {
       const processor = createProcessor();
       const messages: any[] = [];
