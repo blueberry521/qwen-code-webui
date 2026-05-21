@@ -280,7 +280,7 @@ describe("Chat Handler - Permission Mode Tests", () => {
           cwd: "/project/path",
           abortController: expect.any(AbortController),
           pathToQwenExecutable: "/path/to/claude-cli",
-          stderr: true,
+          stderr: expect.any(Function),
           canUseTool: expect.any(Function),
           timeout: expect.objectContaining({
             canUseTool: expect.any(Number),
@@ -665,7 +665,7 @@ describe("Chat Handler - Permission Mode Tests", () => {
           cwd: "/project/path",
           abortController: expect.any(AbortController),
           pathToQwenExecutable: "/path/to/claude-cli",
-          stderr: true,
+          stderr: expect.any(Function),
           canUseTool: expect.any(Function),
           timeout: expect.objectContaining({
             canUseTool: expect.any(Number),
