@@ -35,6 +35,8 @@ import {
   handleVSCodeStopRequest,
   handleVSCodeStatusRequest,
   getVSCodePort,
+  stopVSCodeServer,
+  createVSCodeUpgradeHandler,
 } from "./handlers/vscode.ts";
 
 export interface AppConfig {
@@ -50,7 +52,7 @@ export interface AppConfig {
 export function createApp(
   runtime: Runtime,
   config: AppConfig,
-): { app: Hono<ConfigContext>; shutdown: () => void } {
+): { app: Hono<ConfigContext>; shutdown: () => void; vscodeUpgradeHandler: (req: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void } {
   const app = new Hono<ConfigContext>();
 
   // Store AbortControllers for each request (shared with chat handler)
@@ -69,7 +71,10 @@ export function createApp(
       pending.resolve({ behavior: "deny", message: "Server shutting down" });
     }
     pendingPermissions.clear();
+    stopVSCodeServer();
   };
+
+  const vscodeUpgradeHandler = createVSCodeUpgradeHandler();
 
   // CORS middleware
   // allowMethods intentionally omitted to use Hono defaults
@@ -207,5 +212,5 @@ export function createApp(
     }
   });
 
-  return { app, shutdown };
+  return { app, shutdown, vscodeUpgradeHandler };
 }

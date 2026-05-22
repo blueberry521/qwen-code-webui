@@ -22,9 +22,15 @@ export function useVSCode(): VSCodeState {
     setError(null);
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35_000);
+
       const response = await fetch(getVSCodeStartUrl(workingDirectory), {
         method: "POST",
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -34,7 +40,11 @@ export function useVSCode(): VSCodeState {
       setIsRunning(true);
       setUrl(data.url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start VS Code");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("VS Code startup timed out");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to start VS Code");
+      }
     } finally {
       setIsLoading(false);
     }

@@ -48,7 +48,7 @@ export function VSCodeEditor({
             {t("fileChanges.startingVSCode")}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            {t("fileChanges.startingVSCodeHint", "This may take a few seconds...")}
+            {t("fileChanges.startingVSCodeHint", "Starting code-server (~1s)...")}
           </p>
         </div>
       </div>
