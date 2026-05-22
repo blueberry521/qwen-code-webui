@@ -45,6 +45,10 @@ import { normalizeWindowsPath } from "../utils/pathUtils";
 import { isIntegratedMode, fetchOpenAceProjects } from "../api/openace";
 import { useRemoteChat } from "../hooks/useRemoteChat";
 import type { StreamingContext } from "../hooks/streaming/useMessageProcessor";
+import { FileChangesPanel } from "./file-changes/FileChangesPanel";
+import { FileDiffModal } from "./file-changes/FileDiffModal";
+import type { FileChange } from "../types/fileChanges";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 // Types for quota status
 interface QuotaUsage {
@@ -88,6 +92,13 @@ export function ChatPage() {
   const urlModel = searchParams.get("model");
   const urlUseWebUI = searchParams.get("useWebUI");
   const urlPermissionMode = searchParams.get("permissionMode");
+  const urlShowFileChangesPanel = searchParams.get("showFileChangesPanel");
+
+  // File changes panel state
+  const [showFileChanges, setShowFileChanges] = useState(
+    urlShowFileChangesPanel !== "false"
+  );
+  const [selectedDiffFile, setSelectedDiffFile] = useState<FileChange | null>(null);
 
   // Remote workspace parameters
   const isRemoteWorkspace = searchParams.get("workspaceType") === "remote";
@@ -1418,7 +1429,7 @@ export function ChatPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-      <div className="max-w-6xl mx-auto p-3 sm:p-6 h-screen flex flex-col">
+      <div className={`h-screen flex flex-col ${showFileChanges ? "" : "max-w-6xl mx-auto"} p-3 sm:p-6`}>
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -1530,6 +1541,13 @@ export function ChatPage() {
         </div>
 
         {/* Main Content */}
+        <div className="flex-1 min-h-0 flex">
+          <PanelGroup
+            direction="horizontal"
+            autoSaveId="chat-file-changes-layout"
+          >
+            <Panel defaultSize={showFileChanges ? 70 : 100} minSize={30}>
+              <div className="h-full flex flex-col min-w-0">
         {isHistoryView ? (
           <HistoryView
             workingDirectory={workingDirectory || ""}
@@ -1684,6 +1702,30 @@ export function ChatPage() {
             />
           </>
         )}
+              </div>
+            </Panel>
+            {showFileChanges && (
+              <>
+                <PanelResizeHandle className="w-1 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize transition-colors active:bg-blue-500" />
+                <Panel defaultSize={30} minSize={20} maxSize={50}>
+                  <FileChangesPanel
+                    workingDirectory={workingDirectory}
+                    onOpenDiff={(file) => setSelectedDiffFile(file)}
+                    onClose={() => setShowFileChanges(false)}
+                  />
+                </Panel>
+              </>
+            )}
+          </PanelGroup>
+        </div>
+
+        {/* File Diff Modal */}
+        <FileDiffModal
+          isOpen={selectedDiffFile !== null}
+          file={selectedDiffFile}
+          workingDirectory={workingDirectory || ""}
+          onClose={() => setSelectedDiffFile(null)}
+        />
 
         {/* Settings Modal */}
         <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} allowedTools={allowedTools} onResetPermissions={resetPermissions} />

@@ -11,6 +11,12 @@ export const API_CONFIG = {
     HISTORIES: "/api/projects",
     CONVERSATIONS: "/api/projects",
     MODELS: "/api/models",
+    GIT_STATUS: "/api/git/status",
+    GIT_DIFF: "/api/git/diff",
+    GIT_FILE: "/api/git/file",
+    VSCODE_START: "/api/vscode/start",
+    VSCODE_STOP: "/api/vscode/stop",
+    VSCODE_STATUS: "/api/vscode/status",
   },
 } as const;
 
@@ -70,3 +76,31 @@ export const getModelsUrl = () => {
 export const getVersionUrl = () => {
   return addTokenToUrl(API_CONFIG.ENDPOINTS.VERSION);
 };
+
+// Helper functions for Git APIs
+export const getGitStatusUrl = (workingDirectory: string) =>
+  addTokenToUrl(
+    `${API_CONFIG.ENDPOINTS.GIT_STATUS}?workingDirectory=${encodeURIComponent(workingDirectory)}`
+  );
+
+export const getGitDiffUrl = (workingDirectory: string, file: string) =>
+  addTokenToUrl(
+    `${API_CONFIG.ENDPOINTS.GIT_DIFF}?workingDirectory=${encodeURIComponent(workingDirectory)}&file=${encodeURIComponent(file)}`
+  );
+
+export const getGitFileUrl = (workingDirectory: string, file: string) =>
+  addTokenToUrl(
+    `${API_CONFIG.ENDPOINTS.GIT_FILE}?workingDirectory=${encodeURIComponent(workingDirectory)}&file=${encodeURIComponent(file)}`
+  );
+
+// Helper functions for VS Code APIs
+export const getVSCodeStartUrl = (workingDirectory: string) =>
+  addTokenToUrl(
+    `${API_CONFIG.ENDPOINTS.VSCODE_START}?workingDirectory=${encodeURIComponent(workingDirectory)}`
+  );
+
+export const getVSCodeStopUrl = () =>
+  addTokenToUrl(API_CONFIG.ENDPOINTS.VSCODE_STOP);
+
+export const getVSCodeStatusUrl = () =>
+  addTokenToUrl(API_CONFIG.ENDPOINTS.VSCODE_STATUS);

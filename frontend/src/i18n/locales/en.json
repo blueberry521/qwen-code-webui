@@ -211,5 +211,30 @@
     "session": "Session: ",
     "messages": "messages",
     "failedToLoad": "Failed to load conversations"
+  },
+  "fileChanges": {
+    "title": "File Changes",
+    "noChanges": "No file changes detected",
+    "loading": "Loading changes...",
+    "error": "Failed to load changes",
+    "refresh": "Refresh",
+    "openInVSCode": "Open VS Code",
+    "closeVSCode": "Close VS Code",
+    "startingVSCode": "Starting VS Code...",
+    "startingVSCodeHint": "This may take a few seconds...",
+    "vscodeNotInstalled": "VS Code Server is not installed",
+    "diff": {
+      "title": "File Diff",
+      "splitView": "Split View",
+      "unifiedView": "Unified View",
+      "fullFile": "Full File",
+      "diffView": "Diff",
+      "noDiff": "No differences found"
+    },
+    "status": {
+      "modified": "Modified",
+      "added": "Added",
+      "deleted": "Deleted"
+    }
   }
 }

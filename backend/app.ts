@@ -25,6 +25,17 @@ import { handleQuotaStatusRequest, quotaCheckMiddleware } from "./handlers/quota
 import { logger } from "./utils/logger.ts";
 import { readBinaryFile } from "./utils/fs.ts";
 import { handleDeleteProjectRequest } from "./handlers/projects.ts";
+import {
+  handleGitStatusRequest,
+  handleGitDiffRequest,
+  handleGitFileRequest,
+} from "./handlers/git.ts";
+import {
+  handleVSCodeStartRequest,
+  handleVSCodeStopRequest,
+  handleVSCodeStatusRequest,
+  getVSCodePort,
+} from "./handlers/vscode.ts";
 
 export interface AppConfig {
   debugMode: boolean;
@@ -97,6 +108,16 @@ export function createApp(
   app.delete("/api/projects/:encodedProjectName", (c) => handleDeleteProjectRequest(c));
   app.get("/api/quota/status", (c) => handleQuotaStatusRequest(c));
 
+  // Git file change tracking APIs
+  app.get("/api/git/status", (c) => handleGitStatusRequest(c));
+  app.get("/api/git/diff", (c) => handleGitDiffRequest(c));
+  app.get("/api/git/file", (c) => handleGitFileRequest(c));
+
+  // VS Code Server APIs
+  app.post("/api/vscode/start", (c) => handleVSCodeStartRequest(c));
+  app.delete("/api/vscode/stop", (c) => handleVSCodeStopRequest(c));
+  app.get("/api/vscode/status", (c) => handleVSCodeStatusRequest(c));
+
   app.get("/api/projects/:encodedProjectName/histories", (c) =>
     handleHistoriesRequest(c),
   );
@@ -115,6 +136,50 @@ export function createApp(
 
   app.post("/api/chat", quotaCheckMiddleware, (c) =>
     handleChatRequest(c, requestAbortControllers, pendingPermissions));
+
+  // VS Code reverse proxy — proxies /vscode/* to code-server instance
+  app.all("/vscode/*", async (c) => {
+    const port = getVSCodePort();
+    if (!port) {
+      return c.json({ error: "VS Code server not running" }, 503);
+    }
+
+    const path = c.req.path.replace("/vscode", "");
+    const targetUrl = `http://localhost:${port}${path}`;
+    const queryString = c.req.url.includes("?") ? c.req.url.split("?")[1] : "";
+    const fullUrl = queryString ? `${targetUrl}?${queryString}` : targetUrl;
+
+    try {
+      const headers = new Headers();
+      c.req.raw.headers.forEach((value, key) => {
+        // Forward all headers except host
+        if (key.toLowerCase() !== "host") {
+          headers.set(key, value);
+        }
+      });
+
+      const method = c.req.method;
+      let body: BodyInit | null = null;
+      if (method !== "GET" && method !== "HEAD") {
+        body = c.req.raw.body;
+      }
+
+      const response = await fetch(fullUrl, { method, headers, body });
+
+      // Strip frame-blocking headers from code-server response
+      const responseHeaders = new Headers(response.headers);
+      responseHeaders.delete("X-Frame-Options");
+      responseHeaders.delete("Content-Security-Policy");
+
+      return new Response(response.body, {
+        status: response.status,
+        headers: responseHeaders,
+      });
+    } catch (error) {
+      logger.app.error("VS Code proxy error: {error}", { error });
+      return c.json({ error: "VS Code proxy failed" }, 502);
+    }
+  });
 
   // Static file serving with SPA fallback
   // Serve static assets (CSS, JS, images, etc.)
