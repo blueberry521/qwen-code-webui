@@ -4,6 +4,8 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import en from './locales/en.json';
 import zhCN from './locales/zh-CN.json';
+import ja from './locales/ja.json';
+import ko from './locales/ko.json';
 
 const resources = {
   en: {
@@ -11,6 +13,12 @@ const resources = {
   },
   'zh-CN': {
     translation: zhCN,
+  },
+  ja: {
+    translation: ja,
+  },
+  ko: {
+    translation: ko,
   },
 };
 
@@ -26,9 +34,9 @@ const mapOpenAceLanguage = (lang: string): string => {
     case 'en':
       return 'en';
     case 'ja':
+      return 'ja';
     case 'ko':
-      // Fallback to English for unsupported languages
-      return 'en';
+      return 'ko';
     default:
       return lang;
   }
@@ -84,6 +92,8 @@ const openAceLocalStorageDetector = {
       const reverseMap: Record<string, string> = {
         'zh-CN': 'zh',
         'en': 'en',
+        'ja': 'ja',
+        'ko': 'ko',
       };
       const openAceLang = reverseMap[lng] || lng;
       localStorage.setItem('language', openAceLang);
