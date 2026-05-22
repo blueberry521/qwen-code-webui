@@ -13,8 +13,9 @@ interface FileChange {
 }
 
 function validatePath(workingDirectory: string, filePath: string): string {
-  const resolved = realpathSync(resolve(workingDirectory, filePath));
+  const resolved = resolve(workingDirectory, filePath);
   const base = realpathSync(resolve(workingDirectory));
+  // realpathSync on resolved may fail for new files — string-prefix check handles ../ traversal
   if (!resolved.startsWith(base)) {
     throw new Error("Path traversal detected");
   }
@@ -45,12 +46,7 @@ export async function handleGitStatusRequest(c: Context) {
   try {
     const resolvedWd = resolve(workingDirectory);
 
-    // Validate workingDirectory is within a safe root
-    if (!resolvedWd.startsWith(resolve(workingDirectory))) {
-      return c.json({ error: "Invalid workingDirectory" }, 400);
-    }
-
-    // Check if it's a git repo
+    // Validate workingDirectory exists and is a git repo
     const gitDirExists = await exists(resolve(resolvedWd, ".git"));
     if (!gitDirExists) {
       return c.json({ files: [] });
@@ -133,15 +129,15 @@ export async function handleGitStatusRequest(c: Context) {
       }
     }
 
-    // For untracked files, count lines
+    // For untracked files, count lines (validate paths from git output)
     for (const [path, change] of files) {
       if (change.status === "added" && change.additions === 0) {
         try {
-          const fullPath = resolve(resolvedWd, path);
+          const fullPath = validatePath(resolvedWd, path);
           const content = await readTextFile(fullPath);
           change.additions = content.split("\n").length;
         } catch {
-          // Binary file or unreadable
+          // Binary file, unreadable, or path traversal
         }
       }
     }

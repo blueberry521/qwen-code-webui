@@ -94,10 +94,10 @@ export const getGitFileUrl = (workingDirectory: string, file: string) => {
 };
 
 // Helper functions for VS Code APIs
-export const getVSCodeStartUrl = (workingDirectory: string) =>
-  addTokenToUrl(
-    `${API_CONFIG.ENDPOINTS.VSCODE_START}?workingDirectory=${encodeURIComponent(workingDirectory)}`
-  );
+export const getVSCodeStartUrl = (workingDirectory: string) => {
+  const params = new URLSearchParams({ workingDirectory });
+  return addTokenToUrl(`${API_CONFIG.ENDPOINTS.VSCODE_START}?${params}`);
+};
 
 export const getVSCodeStopUrl = () =>
   addTokenToUrl(API_CONFIG.ENDPOINTS.VSCODE_STOP);
