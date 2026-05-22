@@ -1546,7 +1546,7 @@ export function ChatPage() {
             orientation="horizontal"
             autoSave="chat-file-changes-layout"
           >
-            <Panel defaultSize={showFileChanges ? 70 : 100} minSize={30}>
+            <Panel defaultSize={showFileChanges ? "70%" : "100%"} minSize="30%">
               <div className="h-full flex flex-col min-w-0">
         {isHistoryView ? (
           <HistoryView
@@ -1707,7 +1707,7 @@ export function ChatPage() {
             {showFileChanges && (
               <>
                 <PanelResizeHandle className="w-1 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize transition-colors active:bg-blue-500" />
-                <Panel defaultSize={30} minSize={20} maxSize={50}>
+                <Panel defaultSize="30%" minSize="20%" maxSize="50%">
                   <FileChangesPanel
                     workingDirectory={workingDirectory}
                     onOpenDiff={(file) => setSelectedDiffFile(file)}
