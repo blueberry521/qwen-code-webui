@@ -1543,8 +1543,8 @@ export function ChatPage() {
         {/* Main Content */}
         <div className="flex-1 min-h-0 flex">
           <PanelGroup
-            direction="horizontal"
-            autoSaveId="chat-file-changes-layout"
+            orientation="horizontal"
+            autoSave="chat-file-changes-layout"
           >
             <Panel defaultSize={showFileChanges ? 70 : 100} minSize={30}>
               <div className="h-full flex flex-col min-w-0">

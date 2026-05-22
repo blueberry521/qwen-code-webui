@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import { FileChangesHeader } from "./FileChangesHeader";
 import { FileChangesList } from "./FileChangesList";
 import { VSCodeEditor } from "./VSCodeEditor";
@@ -18,7 +17,6 @@ export function FileChangesPanel({
   onOpenDiff,
   onClose,
 }: FileChangesPanelProps) {
-  const { t } = useTranslation();
   const { files, isLoading, error, refresh } = useFileChanges(workingDirectory);
   const vscode = useVSCode();
   const [showVSCode, setShowVSCode] = useState(false);
