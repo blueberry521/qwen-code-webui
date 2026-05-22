@@ -225,6 +225,11 @@ export class UnifiedMessageProcessor {
       return;
     }
 
+    // Don't show tool_result for AskUserQuestion since we already show AskUserQuestionMessage from tool_use
+    if (toolName === TOOL_NAMES.ASK_USER_QUESTION) {
+      return;
+    }
+
     // This is a regular tool result - create a ToolResultMessage
     const toolResultMessage = createToolResultMessage(
       toolName,
@@ -364,6 +369,30 @@ export class UnifiedMessageProcessor {
         context.addMessage(todoMessage);
       } else {
         // Fallback to regular tool message if todo parsing fails
+        const toolMessage = createToolMessage(contentItem, options.timestamp);
+        context.addMessage(toolMessage);
+      }
+    } else if (contentItem.name === TOOL_NAMES.ASK_USER_QUESTION) {
+      // Special handling for AskUserQuestion - create question message from input
+      const input = (contentItem.input as { questions?: unknown }) || {};
+      const questions = Array.isArray(input.questions) ? input.questions : null;
+      // Validate each question has required fields before rendering
+      const validQuestions = questions?.filter(
+        (q): q is { question: string; header: string; options: unknown[]; multiSelect: boolean } =>
+          typeof q === "object" && q !== null && "question" in q && "header" in q && "options" in q
+      );
+      if (validQuestions && validQuestions.length > 0) {
+        context.addMessage({
+          type: "ask_user_question",
+          questions: validQuestions as Array<{
+            question: string;
+            header: string;
+            options: Array<{ label: string; description: string }>;
+            multiSelect: boolean;
+          }>,
+          timestamp: options.timestamp || Date.now(),
+        });
+      } else {
         const toolMessage = createToolMessage(contentItem, options.timestamp);
         context.addMessage(toolMessage);
       }
