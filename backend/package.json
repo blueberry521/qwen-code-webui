@@ -60,6 +60,7 @@
     "commander": "^14.0.0",
     "hono": "^4.8.5",
     "http-proxy": "^1.18.1",
+    "qs": "^6.15.2",
     "vite": "^7.3.2"
   },
   "devDependencies": {
