@@ -19,6 +19,18 @@ export default defineConfig(({ mode }) => {
         "@shared": resolve(__dirname, "../shared"),
       },
     },
+    build: {
+      chunkSizeWarningLimit: 600,
+      rolldownOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/") || id.includes("node_modules/react-router-dom")) return "vendor";
+            if (id.includes("node_modules/@headlessui") || id.includes("node_modules/@heroicons")) return "ui";
+            if (id.includes("node_modules/react-diff-viewer-continued")) return "diff";
+          },
+        },
+      },
+    },
     server: {
       port: 3000,
       proxy: {
