@@ -28,6 +28,7 @@ export function FileDiffModal({
   const { theme } = useSettings();
   const [diffData, setDiffData] = useState<GitDiffResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("diff");
   const [diffView, setDiffView] = useState<DiffView>("unified");
 
@@ -35,15 +36,18 @@ export function FileDiffModal({
     if (!file || !workingDirectory) return;
 
     setLoading(true);
+    setError(null);
     try {
       const url = getGitDiffUrl(workingDirectory, file.path);
       const response = await fetch(url);
       if (response.ok) {
         const data: GitDiffResponse = await response.json();
         setDiffData(data);
+      } else {
+        setError(`Failed to load diff (HTTP ${response.status})`);
       }
-    } catch {
-      // Ignore
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load diff");
     } finally {
       setLoading(false);
     }
@@ -55,6 +59,7 @@ export function FileDiffModal({
     }
     if (!isOpen) {
       setDiffData(null);
+      setError(null);
       setViewMode("diff");
     }
   }, [isOpen, file, fetchDiff]);
@@ -196,6 +201,10 @@ export function FileDiffModal({
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                    </div>
+                  ) : error ? (
+                    <div className="flex items-center justify-center py-12">
+                      <p className="text-sm text-red-500">{error}</p>
                     </div>
                   ) : viewMode === "diff" && diffData ? (
                     <div className="text-xs">

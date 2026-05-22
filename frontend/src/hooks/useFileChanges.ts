@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { FileChange, GitStatusResponse } from "../types/fileChanges";
 import { getGitStatusUrl } from "../config/api";
 
@@ -19,10 +19,8 @@ export function useFileChanges(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const refreshRef = useRef(0);
 
   const refresh = useCallback(() => {
-    refreshRef.current += 1;
     setLastUpdated(new Date());
   }, []);
 
@@ -48,7 +46,9 @@ export function useFileChanges(
     }
   }, [workingDirectory]);
 
-  // Reset when workingDirectory changes
+  // Reset and fetch when workingDirectory changes
+  // Note: fetchStatus changes identity when workingDirectory changes (useCallback dep),
+  // so this fires once per directory change as expected.
   useEffect(() => {
     setFiles([]);
     setError(null);
@@ -57,11 +57,13 @@ export function useFileChanges(
     }
   }, [workingDirectory, fetchStatus]);
 
-  // Polling
+  // Polling (pause when tab is hidden)
   useEffect(() => {
     if (!workingDirectory) return;
 
-    const interval = setInterval(fetchStatus, POLL_INTERVAL);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchStatus();
+    }, POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [workingDirectory, fetchStatus]);
 

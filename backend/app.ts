@@ -171,10 +171,13 @@ export function createApp(
 
       const response = await fetch(fullUrl, { method, headers, body });
 
-      // Strip frame-blocking headers from code-server response
+      // Strip frame-blocking headers from code-server HTML responses only
       const responseHeaders = new Headers(response.headers);
-      responseHeaders.delete("X-Frame-Options");
-      responseHeaders.delete("Content-Security-Policy");
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("text/html")) {
+        responseHeaders.delete("X-Frame-Options");
+        responseHeaders.delete("Content-Security-Policy");
+      }
 
       return new Response(response.body, {
         status: response.status,

@@ -78,20 +78,20 @@ export const getVersionUrl = () => {
 };
 
 // Helper functions for Git APIs
-export const getGitStatusUrl = (workingDirectory: string) =>
-  addTokenToUrl(
-    `${API_CONFIG.ENDPOINTS.GIT_STATUS}?workingDirectory=${encodeURIComponent(workingDirectory)}`
-  );
+export const getGitStatusUrl = (workingDirectory: string) => {
+  const params = new URLSearchParams({ workingDirectory });
+  return addTokenToUrl(`${API_CONFIG.ENDPOINTS.GIT_STATUS}?${params}`);
+};
 
-export const getGitDiffUrl = (workingDirectory: string, file: string) =>
-  addTokenToUrl(
-    `${API_CONFIG.ENDPOINTS.GIT_DIFF}?workingDirectory=${encodeURIComponent(workingDirectory)}&file=${encodeURIComponent(file)}`
-  );
+export const getGitDiffUrl = (workingDirectory: string, file: string) => {
+  const params = new URLSearchParams({ workingDirectory, file });
+  return addTokenToUrl(`${API_CONFIG.ENDPOINTS.GIT_DIFF}?${params}`);
+};
 
-export const getGitFileUrl = (workingDirectory: string, file: string) =>
-  addTokenToUrl(
-    `${API_CONFIG.ENDPOINTS.GIT_FILE}?workingDirectory=${encodeURIComponent(workingDirectory)}&file=${encodeURIComponent(file)}`
-  );
+export const getGitFileUrl = (workingDirectory: string, file: string) => {
+  const params = new URLSearchParams({ workingDirectory, file });
+  return addTokenToUrl(`${API_CONFIG.ENDPOINTS.GIT_FILE}?${params}`);
+};
 
 // Helper functions for VS Code APIs
 export const getVSCodeStartUrl = (workingDirectory: string) =>

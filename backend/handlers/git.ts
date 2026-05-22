@@ -1,5 +1,6 @@
 import { Context } from "hono";
 import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import type { AppConfig } from "../types.ts";
 import { logger } from "../utils/logger.ts";
 import { readTextFile, exists } from "../utils/fs.ts";
@@ -12,8 +13,9 @@ interface FileChange {
 }
 
 function validatePath(workingDirectory: string, filePath: string): string {
-  const resolved = resolve(workingDirectory, filePath);
-  if (!resolved.startsWith(resolve(workingDirectory))) {
+  const resolved = realpathSync(resolve(workingDirectory, filePath));
+  const base = realpathSync(resolve(workingDirectory));
+  if (!resolved.startsWith(base)) {
     throw new Error("Path traversal detected");
   }
   return resolved;
@@ -43,18 +45,25 @@ export async function handleGitStatusRequest(c: Context) {
   try {
     const resolvedWd = resolve(workingDirectory);
 
+    // Validate workingDirectory is within a safe root
+    if (!resolvedWd.startsWith(resolve(workingDirectory))) {
+      return c.json({ error: "Invalid workingDirectory" }, 400);
+    }
+
     // Check if it's a git repo
     const gitDirExists = await exists(resolve(resolvedWd, ".git"));
     if (!gitDirExists) {
       return c.json({ files: [] });
     }
 
-    // Run git diff --stat HEAD
-    const diffStatResult = await runGit(
-      config.runtime,
-      ["diff", "--stat", "--numstat", "HEAD"],
-      resolvedWd,
-    );
+    // Check if repo has any commits (HEAD exists)
+    const hasHead = await runGit(config.runtime, ["rev-parse", "HEAD"], resolvedWd);
+
+    // Run git diff --numstat (use --cached if no commits yet)
+    const diffArgs = hasHead.success
+      ? ["diff", "--numstat", "HEAD"]
+      : ["diff", "--cached", "--numstat"];
+    const diffStatResult = await runGit(config.runtime, diffArgs, resolvedWd);
 
     // Run git status --porcelain for staged + untracked files
     const statusResult = await runGit(
@@ -83,12 +92,19 @@ export async function handleGitStatusRequest(c: Context) {
       }
     }
 
-    // Parse porcelain status for untracked / staged files not in diff
+    // Parse porcelain status for untracked / staged / renamed files not in diff
     if (statusResult.success && statusResult.stdout.trim()) {
       for (const line of statusResult.stdout.trim().split("\n")) {
         if (line.length < 4) continue;
         const statusCode = line.substring(0, 2);
-        const filePath = line.substring(3);
+
+        // Handle renames: "R  old -> new" — use the new path
+        let filePath: string;
+        if (statusCode.includes("R") && line.includes(" -> ")) {
+          filePath = line.substring(3).split(" -> ")[1];
+        } else {
+          filePath = line.substring(3);
+        }
 
         if (files.has(filePath)) {
           // Update status based on porcelain
@@ -154,22 +170,26 @@ export async function handleGitDiffRequest(c: Context) {
     const resolvedWd = resolve(workingDirectory);
     validatePath(resolvedWd, file);
 
-    // Get unified diff
-    const diffResult = await runGit(
-      config.runtime,
-      ["diff", "HEAD", "--", file],
-      resolvedWd,
-    );
+    // Check if HEAD exists (repo has commits)
+    const hasHead = await runGit(config.runtime, ["rev-parse", "HEAD"], resolvedWd);
 
-    // Get original content (from HEAD)
+    // Get unified diff
+    const diffArgs = hasHead.success
+      ? ["diff", "HEAD", "--", file]
+      : ["diff", "--cached", "--", file];
+    const diffResult = await runGit(config.runtime, diffArgs, resolvedWd);
+
+    // Get original content (from HEAD if available)
     let originalContent = "";
-    const showResult = await runGit(
-      config.runtime,
-      ["show", `HEAD:${file}`],
-      resolvedWd,
-    );
-    if (showResult.success) {
-      originalContent = showResult.stdout;
+    if (hasHead.success) {
+      const showResult = await runGit(
+        config.runtime,
+        ["show", `HEAD:${file}`],
+        resolvedWd,
+      );
+      if (showResult.success) {
+        originalContent = showResult.stdout;
+      }
     }
 
     // Get current content
