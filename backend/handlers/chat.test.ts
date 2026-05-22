@@ -854,7 +854,7 @@ describe("Chat Handler - Permission Mode Tests", () => {
 
   describe("Session Concurrency Guard", () => {
     it("should abort existing request when new request arrives for same session", async () => {
-      let resolveBlocker: () => void;
+      let resolveBlocker!: () => void;
       const blocker = new Promise<void>((r) => { resolveBlocker = r; });
 
       const firstRequest: ChatRequest = {
@@ -946,7 +946,7 @@ describe("Chat Handler - Permission Mode Tests", () => {
 
     it("should resolve pending permissions from superseded request", async () => {
       let capturedCanUseTool: any;
-      let resolveBlocker: () => void;
+      let resolveBlocker!: () => void;
       const blocker = new Promise<void>((r) => { resolveBlocker = r; });
 
       const firstRequest: ChatRequest = {
