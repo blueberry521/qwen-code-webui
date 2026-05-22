@@ -48,7 +48,7 @@ import type { StreamingContext } from "../hooks/streaming/useMessageProcessor";
 import { FileChangesPanel } from "./file-changes/FileChangesPanel";
 import { FileDiffModal } from "./file-changes/FileDiffModal";
 import type { FileChange } from "../types/fileChanges";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 
 // Types for quota status
 interface QuotaUsage {
