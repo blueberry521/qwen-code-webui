@@ -142,7 +142,7 @@ export function createApp(
   app.post("/api/chat", quotaCheckMiddleware, (c) =>
     handleChatRequest(c, requestAbortControllers, pendingPermissions));
 
-  // VS Code reverse proxy — proxies /vscode/* to code-server instance
+  // VS Code reverse proxy — fetch for HTTP, http-proxy for WebSocket (via upgrade handler)
   app.all("/vscode/*", async (c) => {
     const port = getVSCodePort();
     if (!port) {
@@ -150,14 +150,14 @@ export function createApp(
     }
 
     const path = c.req.path.replace("/vscode", "");
-    const targetUrl = `http://localhost:${port}${path}`;
     const queryString = c.req.url.includes("?") ? c.req.url.split("?")[1] : "";
-    const fullUrl = queryString ? `${targetUrl}?${queryString}` : targetUrl;
+    const fullUrl = queryString
+      ? `http://localhost:${port}${path}?${queryString}`
+      : `http://localhost:${port}${path}`;
 
     try {
       const headers = new Headers();
       c.req.raw.headers.forEach((value, key) => {
-        // Forward all headers except host
         if (key.toLowerCase() !== "host") {
           headers.set(key, value);
         }
@@ -171,7 +171,6 @@ export function createApp(
 
       const response = await fetch(fullUrl, { method, headers, body });
 
-      // Strip frame-blocking headers from code-server HTML responses only
       const responseHeaders = new Headers(response.headers);
       const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("text/html")) {

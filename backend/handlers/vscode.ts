@@ -3,13 +3,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import * as http from "node:http";
+import httpProxy from "http-proxy";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import process from "node:process";
 import os from "node:os";
 import type { AppConfig } from "../types.ts";
 import { logger } from "../utils/logger.ts";
+import { readProjectPathMapping } from "../utils/projectMapping.ts";
 
 interface VSCodeProcess {
   childProcess: ChildProcess | null;
@@ -80,6 +81,16 @@ export async function handleVSCodeStartRequest(c: Context) {
 
   if (!workingDirectory) {
     return c.json({ error: "workingDirectory is required" }, 400);
+  }
+
+  // Validate workingDirectory against known project list
+  const mapping = await readProjectPathMapping();
+  const knownPaths = Object.values(mapping);
+  if (knownPaths.length > 0) {
+    const resolved = resolve(workingDirectory);
+    if (!knownPaths.some((p) => resolve(p) === resolved)) {
+      return c.json({ error: "workingDirectory is not a known project" }, 403);
+    }
   }
 
   // Check in-memory state first (same backend process, different session)
@@ -265,7 +276,17 @@ export function stopVSCodeServer() {
   }
 }
 
-// Create WebSocket upgrade handler for VS Code proxy
+// Create a shared http-proxy instance for VS Code proxying
+const vscodeProxy = httpProxy.createProxyServer({
+  ws: true,
+  changeOrigin: true,
+});
+
+vscodeProxy.on("error", (err, _req, _res) => {
+  logger.app.error("VS Code proxy error: {error}", { error: err.message });
+});
+
+// WebSocket upgrade handler for VS Code proxy
 export function createVSCodeUpgradeHandler() {
   return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const port = getVSCodePort();
@@ -275,50 +296,11 @@ export function createVSCodeUpgradeHandler() {
     }
 
     const targetPath = req.url.replace(/^\/vscode\/?/, "/") || "/";
-    const queryString = req.url.includes("?") ? req.url.split("?")[1] : "";
-    const targetPathWithQuery = queryString
-      ? `${targetPath}?${queryString}`
-      : targetPath;
+    req.url = targetPath;
 
-    const proxyReq = http.request({
-      hostname: "localhost",
-      port,
-      path: targetPathWithQuery,
-      method: req.method,
-      headers: {
-        ...req.headers,
-        host: `localhost:${port}`,
-      },
+    vscodeProxy.ws(req, socket, head, {
+      target: `http://localhost:${port}`,
+      headers: { host: `localhost:${port}` },
     });
-
-    proxyReq.on(
-      "upgrade",
-      (proxyRes: IncomingMessage, proxySocket: Duplex, proxyHead: Buffer) => {
-        // Write 101 response to client
-        let response = `HTTP/${req.httpVersion} 101 Switching Protocols\r\n`;
-        for (const [key, value] of Object.entries(proxyRes.headers)) {
-          if (value !== undefined) {
-            response += `${key}: ${value}\r\n`;
-          }
-        }
-        response += "\r\n";
-        socket.write(response);
-
-        // Forward any data that arrived with the 101 response
-        if (proxyHead.length > 0) {
-          socket.write(proxyHead);
-        }
-
-        // Bidirectional pipe
-        proxySocket.pipe(socket);
-        socket.pipe(proxySocket);
-
-        proxySocket.on("error", () => socket.destroy());
-        socket.on("error", () => proxySocket.destroy());
-      },
-    );
-
-    proxyReq.on("error", () => socket.destroy());
-    proxyReq.end();
   };
 }

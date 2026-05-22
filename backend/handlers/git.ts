@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import type { AppConfig } from "../types.ts";
 import { logger } from "../utils/logger.ts";
 import { readTextFile, exists } from "../utils/fs.ts";
+import { readProjectPathMapping } from "../utils/projectMapping.ts";
 
 interface FileChange {
   path: string;
@@ -15,11 +16,21 @@ interface FileChange {
 function validatePath(workingDirectory: string, filePath: string): string {
   const resolved = resolve(workingDirectory, filePath);
   const base = realpathSync(resolve(workingDirectory));
-  // realpathSync on resolved may fail for new files — string-prefix check handles ../ traversal
   if (!resolved.startsWith(base)) {
     throw new Error("Path traversal detected");
   }
   return resolved;
+}
+
+async function validateWorkingDirectory(workingDirectory: string): Promise<boolean> {
+  const mapping = await readProjectPathMapping();
+  const knownPaths = Object.values(mapping);
+  if (knownPaths.length === 0) {
+    // No projects registered yet — allow any valid git repo (first-use scenario)
+    return true;
+  }
+  const resolved = resolve(workingDirectory);
+  return knownPaths.some((p) => resolve(p) === resolved);
 }
 
 async function runGit(
@@ -46,29 +57,28 @@ export async function handleGitStatusRequest(c: Context) {
   try {
     const resolvedWd = resolve(workingDirectory);
 
-    // Validate workingDirectory exists and is a git repo
+    if (!(await validateWorkingDirectory(workingDirectory))) {
+      return c.json({ error: "workingDirectory is not a known project" }, 403);
+    }
+
     const gitDirExists = await exists(resolve(resolvedWd, ".git"));
     if (!gitDirExists) {
       return c.json({ files: [] });
     }
 
-    // Check if repo has any commits (HEAD exists)
     const hasHead = await runGit(config.runtime, ["rev-parse", "HEAD"], resolvedWd);
 
-    // Run git diff --numstat (use --cached if no commits yet)
     const diffArgs = hasHead.success
       ? ["diff", "--numstat", "HEAD"]
       : ["diff", "--cached", "--numstat"];
     const diffStatResult = await runGit(config.runtime, diffArgs, resolvedWd);
 
-    // Run git status --porcelain for staged + untracked files
     const statusResult = await runGit(
       config.runtime,
       ["status", "--porcelain"],
       resolvedWd,
     );
 
-    // Parse numstat output: "additions\tdeletions\tfilepath"
     const files: Map<string, FileChange> = new Map();
 
     if (diffStatResult.success && diffStatResult.stdout.trim()) {
@@ -88,13 +98,11 @@ export async function handleGitStatusRequest(c: Context) {
       }
     }
 
-    // Parse porcelain status for untracked / staged / renamed files not in diff
     if (statusResult.success && statusResult.stdout.trim()) {
       for (const line of statusResult.stdout.trim().split("\n")) {
         if (line.length < 4) continue;
         const statusCode = line.substring(0, 2);
 
-        // Handle renames: "R  old -> new" — use the new path
         let filePath: string;
         if (statusCode.includes("R") && line.includes(" -> ")) {
           filePath = line.substring(3).split(" -> ")[1];
@@ -103,7 +111,6 @@ export async function handleGitStatusRequest(c: Context) {
         }
 
         if (files.has(filePath)) {
-          // Update status based on porcelain
           const existing = files.get(filePath)!;
           if (statusCode.includes("D")) {
             existing.status = "deleted";
@@ -111,7 +118,6 @@ export async function handleGitStatusRequest(c: Context) {
             existing.status = "added";
           }
         } else if (statusCode === "??") {
-          // Untracked file - all lines are additions
           files.set(filePath, {
             path: filePath,
             status: "added",
@@ -129,7 +135,6 @@ export async function handleGitStatusRequest(c: Context) {
       }
     }
 
-    // For untracked files, count lines (validate paths from git output)
     for (const [path, change] of files) {
       if (change.status === "added" && change.additions === 0) {
         try {
@@ -163,19 +168,20 @@ export async function handleGitDiffRequest(c: Context) {
   }
 
   try {
+    if (!(await validateWorkingDirectory(workingDirectory))) {
+      return c.json({ error: "workingDirectory is not a known project" }, 403);
+    }
+
     const resolvedWd = resolve(workingDirectory);
     validatePath(resolvedWd, file);
 
-    // Check if HEAD exists (repo has commits)
     const hasHead = await runGit(config.runtime, ["rev-parse", "HEAD"], resolvedWd);
 
-    // Get unified diff
     const diffArgs = hasHead.success
       ? ["diff", "HEAD", "--", file]
       : ["diff", "--cached", "--", file];
     const diffResult = await runGit(config.runtime, diffArgs, resolvedWd);
 
-    // Get original content (from HEAD if available)
     let originalContent = "";
     if (hasHead.success) {
       const showResult = await runGit(
@@ -188,7 +194,6 @@ export async function handleGitDiffRequest(c: Context) {
       }
     }
 
-    // Get current content
     let modifiedContent = "";
     try {
       const fullPath = resolve(resolvedWd, file);
@@ -218,6 +223,10 @@ export async function handleGitFileRequest(c: Context) {
   }
 
   try {
+    if (!(await validateWorkingDirectory(workingDirectory))) {
+      return c.json({ error: "workingDirectory is not a known project" }, 403);
+    }
+
     const resolvedWd = resolve(workingDirectory);
     const fullPath = validatePath(resolvedWd, file);
 
