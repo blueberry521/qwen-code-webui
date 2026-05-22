@@ -47,7 +47,7 @@ async function main(runtime: NodeRuntime) {
   }
 
   // Create application
-  const { app, shutdown } = createApp(runtime, {
+  const { app, shutdown, vscodeUpgradeHandler } = createApp(runtime, {
     debugMode: args.debug,
     staticPath,
     cliPath,
@@ -68,6 +68,10 @@ async function main(runtime: NodeRuntime) {
 
   // Start server (only show this message when everything is ready)
   logger.cli.info(`🚀 Server starting on ${args.host}:${args.port}`);
+
+  // Register VS Code WebSocket upgrade handler before starting server
+  runtime.onUpgrade(vscodeUpgradeHandler);
+
   await runtime.serve(args.port, args.host, app.fetch);
 }
 

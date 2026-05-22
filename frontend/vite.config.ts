@@ -27,6 +27,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        "/vscode": {
+          target: `http://localhost:${apiPort}`,
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+        },
       },
     },
     test: {

@@ -11,6 +11,8 @@ import type { CommandResult, Runtime } from "./types.ts";
 import type { MiddlewareHandler } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { getPlatform } from "../utils/os.ts";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 
 export class NodeRuntime implements Runtime {
   async findExecutable(name: string): Promise<string[]> {
@@ -127,12 +129,22 @@ export class NodeRuntime implements Runtime {
 
     console.log(`Listening on http://${hostname}:${port}/`);
 
+    // Register WebSocket upgrade handler (e.g., for VS Code proxy)
+    if (this._upgradeHandler) {
+      server.on("upgrade", this._upgradeHandler);
+    }
+
     // Keep the server instance alive to prevent process exit
     // This ensures the Node.js event loop remains active
     this._server = server;
   }
 
   private _server?: import("@hono/node-server").ServerType;
+  private _upgradeHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null;
+
+  onUpgrade(handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void) {
+    this._upgradeHandler = handler;
+  }
 
   createStaticFileMiddleware(options: { root: string }): MiddlewareHandler {
     return serveStatic(options);
