@@ -1,5 +1,10 @@
 import { useState, useCallback } from "react";
-import { getVSCodeStartUrl, getVSCodeStopUrl, getVSCodeStatusUrl } from "../config/api";
+import {
+  getVSCodeStartUrl,
+  getVSCodeStopUrl,
+  getVSCodeStatusUrl,
+} from "../config/api";
+import { addTokenToUrl } from "../utils/token";
 
 interface VSCodeState {
   isRunning: boolean;
@@ -21,6 +26,12 @@ export function useVSCode(): VSCodeState {
     setIsLoading(true);
     setError(null);
 
+    if (workingDirectory.trim() === "") {
+      setError("Select a project first to open VS Code");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 35_000);
@@ -38,12 +49,14 @@ export function useVSCode(): VSCodeState {
       }
 
       setIsRunning(true);
-      setUrl(data.url);
+      setUrl(addTokenToUrl(data.url));
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("VS Code startup timed out");
       } else {
-        setError(err instanceof Error ? err.message : "Failed to start VS Code");
+        setError(
+          err instanceof Error ? err.message : "Failed to start VS Code",
+        );
       }
     } finally {
       setIsLoading(false);

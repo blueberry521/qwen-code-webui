@@ -17,6 +17,10 @@ backend/dist/
 *.swp
 *.swo
 
+# Claude Code
+.claude/
+.agents/
+
 # OS files
 .DS_Store
 Thumbs.db

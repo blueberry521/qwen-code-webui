@@ -25,6 +25,7 @@ await build({
     "@hono/node-server",
     "hono",
     "commander",
+    "http-proxy",
   ],
   sourcemap: true,
 });
