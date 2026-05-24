@@ -295,14 +295,11 @@ export function createVSCodeUpgradeHandler() {
       return;
     }
 
-    // code-server uses paths like /stable-{hash}/ws for WebSocket.
-    // Only proxy known code-server paths to avoid routing future
-    // non-code-server WebSocket upgrades to the wrong target.
-    const urlPath = req.url?.split("?")[0] ?? "";
-    if (!urlPath.includes("/ws")) {
-      socket.destroy();
-      return;
-    }
+    // code-server WebSocket upgrades come from the iframe at /vscode/,
+    // with paths like /vscode/stable-{hash}?reconnectionToken=...
+    // Proxy all upgrades to code-server when it's running.
+    const originalUrl = req.url;
+    req.url = req.url?.replace(/^\/vscode\/?/, "/") || "/";
 
     vscodeProxy.ws(req, socket, head, {
       target: `http://localhost:${port}`,
