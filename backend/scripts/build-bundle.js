@@ -16,6 +16,9 @@ await build({
   platform: "node",
   target: "node18",
   format: "esm",
+  banner: {
+    js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+  },
   outfile: "dist/cli/node.js",
   external: [
     "@anthropic-ai/claude-code",
