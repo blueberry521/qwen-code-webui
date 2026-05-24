@@ -20,9 +20,7 @@ export function VSCodeEditor({
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <p className="text-sm text-red-500 dark:text-red-400 mb-2">
-            {error}
-          </p>
+          <p className="text-sm text-red-500 dark:text-red-400 mb-2">{error}</p>
           {error.includes("not installed") && (
             <p className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 rounded p-2 mt-2">
               curl -fsSL https://code-server.dev/install.sh | sh
@@ -48,7 +46,10 @@ export function VSCodeEditor({
             {t("fileChanges.startingVSCode")}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            {t("fileChanges.startingVSCodeHint", "Starting code-server (~1s)...")}
+            {t(
+              "fileChanges.startingVSCodeHint",
+              "Starting code-server (~1s)...",
+            )}
           </p>
         </div>
       </div>

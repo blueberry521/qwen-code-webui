@@ -18,10 +18,16 @@ import { handleHistoriesRequest } from "./handlers/histories.ts";
 import { handleConversationRequest } from "./handlers/conversations.ts";
 import { handleChatRequest } from "./handlers/chat.ts";
 import { handleAbortRequest } from "./handlers/abort.ts";
-import { handlePermissionRespond, type PendingPermission } from "./handlers/permission.ts";
+import {
+  handlePermissionRespond,
+  type PendingPermission,
+} from "./handlers/permission.ts";
 import { handleVersionRequest } from "./handlers/version.ts";
 import { handleModelsRequest } from "./handlers/models.ts";
-import { handleQuotaStatusRequest, quotaCheckMiddleware } from "./handlers/quota.ts";
+import {
+  handleQuotaStatusRequest,
+  quotaCheckMiddleware,
+} from "./handlers/quota.ts";
 import { logger } from "./utils/logger.ts";
 import { readBinaryFile } from "./utils/fs.ts";
 import { handleDeleteProjectRequest } from "./handlers/projects.ts";
@@ -52,7 +58,15 @@ export interface AppConfig {
 export function createApp(
   runtime: Runtime,
   config: AppConfig,
-): { app: Hono<ConfigContext>; shutdown: () => void; vscodeUpgradeHandler: (req: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void } {
+): {
+  app: Hono<ConfigContext>;
+  shutdown: () => void;
+  vscodeUpgradeHandler: (
+    req: import("node:http").IncomingMessage,
+    socket: import("node:stream").Duplex,
+    head: Buffer,
+  ) => void;
+} {
   const app = new Hono<ConfigContext>();
 
   // Store AbortControllers for each request (shared with chat handler)
@@ -110,7 +124,9 @@ export function createApp(
   app.get("/api/version", () => handleVersionRequest());
   app.get("/api/models", (c) => handleModelsRequest(c));
   app.get("/api/projects", (c) => handleProjectsRequest(c));
-  app.delete("/api/projects/:encodedProjectName", (c) => handleDeleteProjectRequest(c));
+  app.delete("/api/projects/:encodedProjectName", (c) =>
+    handleDeleteProjectRequest(c),
+  );
   app.get("/api/quota/status", (c) => handleQuotaStatusRequest(c));
 
   // Git file change tracking APIs
@@ -140,7 +156,8 @@ export function createApp(
   );
 
   app.post("/api/chat", quotaCheckMiddleware, (c) =>
-    handleChatRequest(c, requestAbortControllers, pendingPermissions));
+    handleChatRequest(c, requestAbortControllers, pendingPermissions),
+  );
 
   // VS Code reverse proxy — fetch for HTTP, http-proxy for WebSocket (via upgrade handler)
   app.all("/vscode/*", async (c) => {
@@ -172,6 +189,9 @@ export function createApp(
       const response = await fetch(fullUrl, { method, headers, body });
 
       const responseHeaders = new Headers(response.headers);
+      responseHeaders.delete("content-encoding");
+      responseHeaders.delete("content-length");
+      responseHeaders.delete("transfer-encoding");
       const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("text/html")) {
         responseHeaders.delete("X-Frame-Options");
