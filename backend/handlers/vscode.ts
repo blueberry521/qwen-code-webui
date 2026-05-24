@@ -290,13 +290,19 @@ vscodeProxy.on("error", (err, _req, _res) => {
 export function createVSCodeUpgradeHandler() {
   return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const port = getVSCodePort();
-    if (!port || !req.url?.startsWith("/vscode")) {
+    if (!port) {
       socket.destroy();
       return;
     }
 
-    const targetPath = req.url.replace(/^\/vscode\/?/, "/") || "/";
-    req.url = targetPath;
+    // code-server uses paths like /stable-{hash}/ws for WebSocket.
+    // Only proxy known code-server paths to avoid routing future
+    // non-code-server WebSocket upgrades to the wrong target.
+    const urlPath = req.url?.split("?")[0] ?? "";
+    if (!urlPath.includes("/ws")) {
+      socket.destroy();
+      return;
+    }
 
     vscodeProxy.ws(req, socket, head, {
       target: `http://localhost:${port}`,
