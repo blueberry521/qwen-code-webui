@@ -79,7 +79,7 @@ export function useVSCode(): VSCodeState {
       const response = await fetch(getVSCodeStatusUrl());
       const data = await response.json();
       setIsRunning(data.running);
-      setUrl(data.url || null);
+      setUrl(data.url ? addTokenToUrl(data.url) : null);
     } catch {
       // Ignore
     }

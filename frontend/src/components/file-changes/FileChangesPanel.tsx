@@ -25,9 +25,9 @@ export function FileChangesPanel({
     if (showVSCode) {
       await vscode.stop();
       setShowVSCode(false);
-    } else {
+    } else if (workingDirectory) {
       setShowVSCode(true);
-      await vscode.start(workingDirectory || "");
+      await vscode.start(workingDirectory);
     }
   }, [showVSCode, workingDirectory, vscode]);
 
