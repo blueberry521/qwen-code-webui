@@ -217,6 +217,7 @@
     "refresh": "새로고침",
     "showPanel": "파일 변경 표시",
     "hidePanel": "파일 변경 숨기기",
+    "remoteUnsupported": "원격 워크스페이스에서는 파일 변경 목록이 아직 지원되지 않습니다",
     "openInVSCode": "VS Code 열기",
     "closeVSCode": "VS Code 닫기",
     "startingVSCode": "VS Code 시작 중...",
