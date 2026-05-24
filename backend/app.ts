@@ -175,10 +175,15 @@ export function createApp(
     try {
       const headers = new Headers();
       c.req.raw.headers.forEach((value, key) => {
-        if (key.toLowerCase() !== "host") {
+        const lower = key.toLowerCase();
+        if (lower !== "host") {
           headers.set(key, value);
         }
       });
+      headers.set("host", `localhost:${port}`);
+      if (headers.has("origin")) {
+        headers.set("origin", `http://localhost:${port}`);
+      }
 
       const method = c.req.method;
       let body: BodyInit | null = null;
