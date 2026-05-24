@@ -14,6 +14,7 @@ const POLL_INTERVAL = 5000;
 
 export function useFileChanges(
   workingDirectory: string | undefined,
+  enabled = true,
 ): FileChangesResult {
   const [files, setFiles] = useState<FileChange[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,7 +23,7 @@ export function useFileChanges(
 
   const fetchStatus = useCallback(
     async (showLoading = true) => {
-      if (!workingDirectory) return;
+      if (!enabled || !workingDirectory) return;
 
       if (showLoading) {
         setIsLoading(true);
@@ -52,7 +53,7 @@ export function useFileChanges(
         setLastUpdated(new Date());
       }
     },
-    [workingDirectory],
+    [enabled, workingDirectory],
   );
 
   const refresh = useCallback(() => {
@@ -65,20 +66,20 @@ export function useFileChanges(
   useEffect(() => {
     setFiles([]);
     setError(null);
-    if (workingDirectory) {
+    if (enabled && workingDirectory) {
       fetchStatus();
     }
-  }, [workingDirectory, fetchStatus]);
+  }, [enabled, workingDirectory, fetchStatus]);
 
   // Polling (pause when tab is hidden)
   useEffect(() => {
-    if (!workingDirectory) return;
+    if (!enabled || !workingDirectory) return;
 
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") fetchStatus(false);
     }, POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [workingDirectory, fetchStatus]);
+  }, [enabled, workingDirectory, fetchStatus]);
 
   return { files, isLoading, error, refresh, lastUpdated };
 }

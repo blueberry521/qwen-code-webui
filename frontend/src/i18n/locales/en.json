@@ -220,6 +220,7 @@
     "refresh": "Refresh",
     "showPanel": "Show file changes",
     "hidePanel": "Hide file changes",
+    "remoteUnsupported": "File changes are not supported for remote workspaces yet",
     "openInVSCode": "Open VS Code",
     "closeVSCode": "Close VS Code",
     "startingVSCode": "Starting VS Code...",

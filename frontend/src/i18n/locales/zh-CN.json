@@ -220,6 +220,7 @@
     "refresh": "刷新",
     "showPanel": "显示文件变更",
     "hidePanel": "隐藏文件变更",
+    "remoteUnsupported": "远程工作区暂不支持文件变更列表",
     "openInVSCode": "打开 VS Code",
     "closeVSCode": "关闭 VS Code",
     "startingVSCode": "正在启动 VS Code...",

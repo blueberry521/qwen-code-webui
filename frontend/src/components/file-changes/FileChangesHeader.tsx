@@ -9,6 +9,7 @@ interface FileChangesHeaderProps {
   fileCount: number;
   isLoading: boolean;
   vscodeRunning: boolean;
+  actionsDisabled?: boolean;
   onRefresh: () => void;
   onToggleVSCode: () => void;
   onClose: () => void;
@@ -18,11 +19,18 @@ export function FileChangesHeader({
   fileCount,
   isLoading,
   vscodeRunning,
+  actionsDisabled = false,
   onRefresh,
   onToggleVSCode,
   onClose,
 }: FileChangesHeaderProps) {
   const { t } = useTranslation();
+  const disabledTitle = t("fileChanges.remoteUnsupported");
+  const vscodeTitle = actionsDisabled
+    ? disabledTitle
+    : vscodeRunning
+      ? t("fileChanges.closeVSCode")
+      : t("fileChanges.openInVSCode");
 
   return (
     <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
@@ -39,9 +47,9 @@ export function FileChangesHeader({
       <div className="flex items-center gap-1">
         <button
           onClick={onRefresh}
-          disabled={isLoading}
+          disabled={isLoading || actionsDisabled}
           className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-50"
-          title={t("fileChanges.refresh")}
+          title={actionsDisabled ? disabledTitle : t("fileChanges.refresh")}
         >
           <ArrowPathIcon
             className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
@@ -49,16 +57,13 @@ export function FileChangesHeader({
         </button>
         <button
           onClick={onToggleVSCode}
+          disabled={actionsDisabled}
           className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 ${
             vscodeRunning
               ? "text-blue-500 hover:text-blue-700 dark:text-blue-400"
               : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-          }`}
-          title={
-            vscodeRunning
-              ? t("fileChanges.closeVSCode")
-              : t("fileChanges.openInVSCode")
-          }
+          } disabled:opacity-50`}
+          title={vscodeTitle}
         >
           <CodeBracketSquareIcon className="w-4 h-4" />
         </button>

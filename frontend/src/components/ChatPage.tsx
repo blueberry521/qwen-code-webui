@@ -1757,6 +1757,7 @@ export function ChatPage() {
                     onOpenDiff={(file) => setSelectedDiffFile(file)}
                     onClose={() => setFileChangesPanelVisible(false)}
                     onVSCodeOpenChange={setIsVSCodePanelOpen}
+                    remoteWorkspace={isRemoteWorkspace}
                   />
                 </Panel>
               </>

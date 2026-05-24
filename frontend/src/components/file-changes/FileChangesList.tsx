@@ -6,6 +6,7 @@ interface FileChangesListProps {
   files: FileChange[];
   isLoading: boolean;
   error: string | null;
+  emptyMessage?: string;
   onFileClick: (file: FileChange) => void;
 }
 
@@ -91,6 +92,7 @@ export function FileChangesList({
   files,
   isLoading,
   error,
+  emptyMessage,
   onFileClick,
 }: FileChangesListProps) {
   const { t } = useTranslation();
@@ -122,7 +124,7 @@ export function FileChangesList({
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <p className="text-xs text-slate-400 dark:text-slate-500">
-          {t("fileChanges.noChanges")}
+          {emptyMessage || t("fileChanges.noChanges")}
         </p>
       </div>
     );
