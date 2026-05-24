@@ -181,7 +181,9 @@ export function createApp(
         }
       });
       headers.set("host", `localhost:${port}`);
-      headers.set("origin", `http://localhost:${port}`);
+      if (headers.has("origin")) {
+        headers.set("origin", `http://localhost:${port}`);
+      }
 
       const method = c.req.method;
       let body: BodyInit | null = null;

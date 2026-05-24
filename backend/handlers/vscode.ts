@@ -290,12 +290,12 @@ vscodeProxy.on("error", (err, _req, _res) => {
 export function createVSCodeUpgradeHandler() {
   return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const port = getVSCodePort();
-    if (!port) {
+    if (!port || !req.url?.startsWith("/vscode")) {
       socket.destroy();
       return;
     }
 
-    req.url = req.url?.replace(/^\/vscode\/?/, "/") || "/";
+    req.url = req.url.replace(/^\/vscode\/?/, "/") || "/";
 
     vscodeProxy.ws(req, socket, head, {
       target: `http://localhost:${port}`,
