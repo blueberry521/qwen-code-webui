@@ -68,6 +68,11 @@ function isSameWorkingDirectory(a: string, b: string): boolean {
   return resolve(a) === resolve(b);
 }
 
+function getVSCodeUrl(workingDirectory: string): string {
+  const params = new URLSearchParams({ folder: workingDirectory });
+  return `/vscode/?${params}`;
+}
+
 async function stopOwnedVSCodeProcess(
   processInfo: VSCodeProcess,
   waitForExit = false,
@@ -140,7 +145,7 @@ export async function handleVSCodeStartRequest(c: Context) {
     ) {
       return c.json({
         port: vscodeProcess.port,
-        url: "/vscode/",
+        url: getVSCodeUrl(workingDirectory),
         alreadyRunning: true,
       });
     }
@@ -168,7 +173,11 @@ export async function handleVSCodeStartRequest(c: Context) {
     logger.app.info("Reusing existing code-server on port {port}", {
       port: lock.port,
     });
-    return c.json({ port: lock.port, url: "/vscode/", alreadyRunning: true });
+    return c.json({
+      port: lock.port,
+      url: getVSCodeUrl(workingDirectory),
+      alreadyRunning: true,
+    });
   } else if (lock) {
     removeLockFile(workingDirectory); // Stale lock
   }
@@ -197,6 +206,7 @@ export async function handleVSCodeStartRequest(c: Context) {
         "--disable-update-check",
         "--disable-workspace-trust",
         "--disable-getting-started-override",
+        "--ignore-last-opened",
         workingDirectory,
       ],
       {
@@ -264,7 +274,7 @@ export async function handleVSCodeStartRequest(c: Context) {
     });
 
     logger.app.info("VS Code server started on port {port}", { port });
-    return c.json({ port, url: "/vscode/" });
+    return c.json({ port, url: getVSCodeUrl(workingDirectory) });
   } catch (error) {
     logger.app.error("VS Code start error: {error}", { error });
     return c.json({ error: "Failed to start VS Code" }, 500);
@@ -296,7 +306,7 @@ export async function handleVSCodeStatusRequest(c: Context) {
   return c.json({
     running: true,
     port: vscodeProcess.port,
-    url: "/vscode/",
+    url: getVSCodeUrl(vscodeProcess.workingDirectory),
     workingDirectory: vscodeProcess.workingDirectory,
   });
 }
