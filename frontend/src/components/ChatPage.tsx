@@ -1390,9 +1390,25 @@ export function ChatPage() {
     navigate({ search: searchParams.toString() });
   }, [navigate]);
 
+  // Issue #229: Switch project in iframe creates new tab instead of interrupting current session
   const handleBackToProjects = useCallback(() => {
-    navigate("/");
-  }, [navigate]);
+    // Check if embedded in iframe (Open ACE workspace)
+    if (window.parent !== window) {
+      // Send message to parent window to create a new tab for project selection
+      // This prevents interrupting the current thinking session
+      const workspaceType = isRemoteWorkspace ? "remote" : "local";
+      const machineId = remoteMachineId || undefined;
+      console.log('[qwen-code-webui] Sending switch-project request to parent:', { workspaceType, machineId });
+      window.parent.postMessage({
+        type: 'qwen-code-switch-project-request',
+        workspaceType,
+        machineId,
+      }, '*');
+    } else {
+      // Not embedded in iframe, navigate directly
+      navigate("/");
+    }
+  }, [navigate, isRemoteWorkspace, remoteMachineId]);
 
   // Handle global keyboard shortcuts
   useEffect(() => {
