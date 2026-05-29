@@ -105,6 +105,14 @@ export function ChatPage() {
   const isRemoteWorkspace = searchParams.get("workspaceType") === "remote";
   const remoteMachineId = searchParams.get("machineId") || "";
   const remoteMachineName = searchParams.get("machineName") || "";
+  const integratedMode = isIntegratedMode();
+
+  // Get current view, sessionId, and toolName from query parameters
+  const currentView = searchParams.get("view");
+  const sessionId = searchParams.get("sessionId");
+  const toolName = searchParams.get("toolName");
+  const isHistoryView = currentView === "history";
+  const isLoadedConversation = !!sessionId && !isHistoryView;
 
   // Model selection
   const {
@@ -112,7 +120,15 @@ export function ChatPage() {
     selectedModel,
     setSelectedModel,
     loading: modelsLoading,
-  } = useModel();
+    error: modelError,
+    emptyReason: modelEmptyReason,
+    haPoolToken,
+  } = useModel({
+    integratedMode,
+    workspaceType: isRemoteWorkspace ? "remote" : "local",
+    machineId: isRemoteWorkspace && !isLoadedConversation ? remoteMachineId : undefined,
+    sessionId: isRemoteWorkspace && isLoadedConversation ? sessionId : undefined,
+  });
 
   // Apply URL settings on mount (Issue #70: Workspace restoration)
   useEffect(() => {
@@ -193,13 +209,6 @@ export function ChatPage() {
     // Normalize Windows paths (remove leading slash from /C:/... format)
     return normalizeWindowsPath(decodedPath);
   })();
-
-  // Get current view, sessionId, and toolName from query parameters
-  const currentView = searchParams.get("view");
-  const sessionId = searchParams.get("sessionId");
-  const toolName = searchParams.get("toolName");
-  const isHistoryView = currentView === "history";
-  const isLoadedConversation = !!sessionId && !isHistoryView;
 
   const { processStreamLine } = useClaudeStreaming();
   const { abortRequest, createAbortHandler } = useAbortController();
@@ -364,15 +373,26 @@ export function ChatPage() {
   useEffect(() => {
     if (!isRemoteWorkspace || !remoteMachineId || remoteChat.session) return;
     if (startSessionCalledRef.current) return;
+    if (modelsLoading) return;
 
     if (isLoadedConversation && sessionId) {
       startSessionCalledRef.current = true;
       remoteChat.connectSession(sessionId);
-    } else if (workingDirectory) {
+    } else if (workingDirectory && haPoolToken) {
       startSessionCalledRef.current = true;
-      remoteChat.startSession(remoteMachineId, workingDirectory, selectedModel || undefined, undefined, remotePermissionMode);
+      remoteChat.startSession(
+        remoteMachineId,
+        workingDirectory,
+        selectedModel || undefined,
+        undefined,
+        remotePermissionMode,
+        haPoolToken
+      );
     }
-  }, [isRemoteWorkspace, remoteMachineId, workingDirectory, selectedModel, isLoadedConversation, sessionId, remotePermissionMode, remoteChat.session]);
+  }, [isRemoteWorkspace, remoteMachineId, workingDirectory, selectedModel, isLoadedConversation, sessionId, remotePermissionMode, remoteChat.session, modelsLoading, haPoolToken]);
+
+  // Detect when remote session can't start due to missing haPoolToken in integrated mode
+  const missingPoolToken = isRemoteWorkspace && integratedMode && !isLoadedConversation && !modelsLoading && !haPoolToken && !remoteChat.session && !startSessionCalledRef.current;
 
   // Track the model used when the remote session was created
   const remoteSessionModelRef = useRef<string | null>(null);
@@ -1546,6 +1566,17 @@ export function ChatPage() {
                   )}
                 </div>
               )}
+              {/* Missing HA pool token — cannot start remote session */}
+              {missingPoolToken && modelError && (
+                <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                  {modelError}
+                </p>
+              )}
+              {missingPoolToken && !modelError && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  {t("chat.missingPoolToken")}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1555,6 +1586,8 @@ export function ChatPage() {
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
                 loading={modelsLoading}
+                emptyReason={modelEmptyReason}
+                integratedMode={integratedMode}
               />
             )}
             <ProjectSwitchButton onClick={handleBackToProjects} />

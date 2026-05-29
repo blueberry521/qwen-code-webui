@@ -5,6 +5,7 @@
  * Falls back to local qwen-code-webui API when not integrated.
  */
 
+import type { ModelConfig } from "@shared/types";
 import { getToken, getOpenAceUrl } from "../utils/token";
 
 // Open-ACE API base URL - can be configured via environment or detected from URL
@@ -123,6 +124,13 @@ export interface CheckPathResponse {
   canWrite?: boolean;
   canCreate?: boolean;
   error?: string;
+}
+
+export interface SessionModelsResponse {
+  success: boolean;
+  models: ModelConfig[];
+  empty_reason?: string | null;
+  ha_pool_token?: string;
 }
 
 /**
@@ -304,6 +312,34 @@ export function getOpenAceSessionApi(sessionId?: string, action?: string): strin
   return buildOpenAceUrl(endpoint);
 }
 
+export async function fetchSessionModels(request: {
+  workspaceType: "local" | "remote";
+  machineId?: string;
+  sessionId?: string | null;
+}): Promise<SessionModelsResponse> {
+  const params = new URLSearchParams({ workspace_type: request.workspaceType });
+  if (request.machineId) {
+    params.set("machine_id", request.machineId);
+  }
+  if (request.sessionId) {
+    params.set("session_id", request.sessionId);
+  }
+  const url = buildOpenAceUrl(`/api/workspace/session-models?${params}`);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch session models: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 // -------------------------------------------------------
 // Remote Machine & Workspace types
 // -------------------------------------------------------
@@ -372,7 +408,8 @@ export async function createRemoteSession(
   projectPath: string,
   model?: string,
   cliTool?: string,
-  permissionMode?: string
+  permissionMode?: string,
+  haPoolToken?: string
 ): Promise<{ success: boolean; session: RemoteSession }> {
   const url = buildOpenAceUrl("/api/remote/sessions");
 
@@ -387,6 +424,7 @@ export async function createRemoteSession(
       model: model || undefined,
       cli_tool: cliTool || undefined,
       permission_mode: permissionMode || undefined,
+      ha_pool_token: haPoolToken || undefined,
     }),
   });
 
@@ -664,4 +702,3 @@ export function createRemoteSessionStream(
   };
   return es;
 }
-
