@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import type { FileChange, GitDiffResponse } from "../../types/fileChanges";
 import { getGitDiffUrl } from "../../config/api";
+import { fetchRemoteGitDiff } from "../../api/openace";
 import { useSettings } from "../../hooks/useSettings";
 
 interface FileDiffModalProps {
@@ -17,6 +18,8 @@ interface FileDiffModalProps {
   file: FileChange | null;
   workingDirectory: string;
   onClose: () => void;
+  remoteWorkspace?: boolean;
+  machineId?: string;
 }
 
 type ViewMode = "diff" | "file";
@@ -27,6 +30,8 @@ export function FileDiffModal({
   file,
   workingDirectory,
   onClose,
+  remoteWorkspace = false,
+  machineId,
 }: FileDiffModalProps) {
   const { t } = useTranslation();
   const { theme } = useSettings();
@@ -39,24 +44,41 @@ export function FileDiffModal({
 
   const fetchDiff = useCallback(async () => {
     if (!file || !workingDirectory) return;
+    // Remote mode requires machineId
+    if (remoteWorkspace && !machineId) return;
 
     setLoading(true);
     setError(null);
     try {
-      const url = getGitDiffUrl(workingDirectory, file.path);
-      const response = await fetch(url);
-      if (response.ok) {
-        const data: GitDiffResponse = await response.json();
-        setDiffData(data);
+      if (remoteWorkspace && machineId) {
+        // Remote mode: fetch via Open-ACE proxy
+        const data = await fetchRemoteGitDiff(machineId, workingDirectory, file.path);
+        if (!data.success) {
+          throw new Error(data.error || "Failed to load remote diff");
+        }
+        setDiffData({
+          file: data.result?.file || file.path,
+          diff: data.result?.diff || "",
+          originalContent: data.result?.originalContent || "",
+          modifiedContent: data.result?.modifiedContent || "",
+        });
       } else {
-        setError(`Failed to load diff (HTTP ${response.status})`);
+        // Local mode: use local git API (unchanged behavior)
+        const url = getGitDiffUrl(workingDirectory, file.path);
+        const response = await fetch(url);
+        if (response.ok) {
+          const data: GitDiffResponse = await response.json();
+          setDiffData(data);
+        } else {
+          setError(`Failed to load diff (HTTP ${response.status})`);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load diff");
     } finally {
       setLoading(false);
     }
-  }, [file, workingDirectory]);
+  }, [file, workingDirectory, remoteWorkspace, machineId]);
 
   useEffect(() => {
     if (isOpen && file) {

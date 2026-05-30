@@ -1807,6 +1807,7 @@ export function ChatPage() {
                     onClose={() => setFileChangesPanelVisible(false)}
                     onVSCodeOpenChange={setIsVSCodePanelOpen}
                     remoteWorkspace={isRemoteWorkspace}
+                    machineId={remoteMachineId || undefined}
                   />
                 </Panel>
               </>
@@ -1820,6 +1821,8 @@ export function ChatPage() {
           file={selectedDiffFile}
           workingDirectory={workingDirectory || ""}
           onClose={() => setSelectedDiffFile(null)}
+          remoteWorkspace={isRemoteWorkspace}
+          machineId={remoteMachineId || undefined}
         />
 
         {/* Settings Modal */}
