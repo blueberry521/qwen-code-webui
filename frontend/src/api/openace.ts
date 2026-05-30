@@ -716,7 +716,7 @@ export async function fetchRemoteGitStatus(
   projectPath: string
 ): Promise<{ success: boolean; result?: { files: any[] }; error?: string }> {
   const url = buildOpenAceUrl(
-    `/api/remote/machines/${machineId}/git/status?path=${encodeURIComponent(projectPath)}`
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/status?path=${encodeURIComponent(projectPath)}`
   );
 
   const response = await fetch(url, {
@@ -745,7 +745,7 @@ export async function fetchRemoteGitDiff(
   error?: string;
 }> {
   const url = buildOpenAceUrl(
-    `/api/remote/machines/${machineId}/git/diff?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/diff?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
   );
 
   const response = await fetch(url, {
@@ -770,7 +770,7 @@ export async function fetchRemoteGitFile(
   file: string
 ): Promise<{ success: boolean; result?: { file: string; content: string }; error?: string }> {
   const url = buildOpenAceUrl(
-    `/api/remote/machines/${machineId}/git/file?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/file?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
   );
 
   const response = await fetch(url, {

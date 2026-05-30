@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   startRemoteVSCode,
   stopRemoteVSCode,
@@ -23,6 +23,15 @@ export function useRemoteVSCode(): RemoteVSCodeState {
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const vscodeIdRef = useRef<string | null>(null);
+  // Track whether the component is still mounted to avoid setState after unmount
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const start = useCallback(async (machineId: string, workingDirectory: string) => {
     setIsLoading(true);
@@ -40,12 +49,17 @@ export function useRemoteVSCode(): RemoteVSCodeState {
       // Poll status until code-server is ready
       const startTime = Date.now();
       while (Date.now() - startTime < STATUS_POLL_TIMEOUT) {
+        if (!mountedRef.current) return;
+
         const status = await getRemoteVSCodeStatus(result.vscode_id!);
 
+        if (!mountedRef.current) return;
+
         if (status.status === "running" && status.url) {
-          setIsRunning(true);
           // Build the full URL with the folder query param
-          const fullUrl = `${status.url}&folder=${encodeURIComponent(workingDirectory)}`;
+          const separator = status.url.includes("?") ? "&" : "?";
+          const fullUrl = `${status.url}${separator}folder=${encodeURIComponent(workingDirectory)}`;
+          setIsRunning(true);
           setUrl(fullUrl);
           setIsLoading(false);
           return;
@@ -61,13 +75,16 @@ export function useRemoteVSCode(): RemoteVSCodeState {
 
       throw new Error("VSCode startup timed out");
     } catch (err) {
+      if (!mountedRef.current) return;
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("VSCode startup timed out");
       } else {
         setError(err instanceof Error ? err.message : "Failed to start VSCode");
       }
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -75,8 +92,8 @@ export function useRemoteVSCode(): RemoteVSCodeState {
     if (vscodeIdRef.current) {
       try {
         await stopRemoteVSCode(vscodeIdRef.current, machineId);
-      } catch {
-        // Ignore errors on stop
+      } catch (err) {
+        console.warn("Failed to stop remote VSCode:", err);
       }
     }
     setIsRunning(false);
