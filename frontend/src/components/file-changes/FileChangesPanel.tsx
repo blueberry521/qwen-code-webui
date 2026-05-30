@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useTranslation } from "react-i18next";
 import { FileChangesHeader } from "./FileChangesHeader";
 import { FileChangesList } from "./FileChangesList";
 import { VSCodeEditor } from "./VSCodeEditor";
@@ -11,7 +10,6 @@ import type { FileChange } from "../../types/fileChanges";
 interface FileChangesPanelProps {
   workingDirectory: string | undefined;
   onOpenDiff: (file: FileChange) => void;
-  onClose: () => void;
   onVSCodeOpenChange?: (isOpen: boolean) => void;
   remoteWorkspace?: boolean;
   machineId?: string;
@@ -20,12 +18,10 @@ interface FileChangesPanelProps {
 export function FileChangesPanel({
   workingDirectory,
   onOpenDiff,
-  onClose,
   onVSCodeOpenChange,
   remoteWorkspace = false,
   machineId,
 }: FileChangesPanelProps) {
-  const { t } = useTranslation();
   const { files, isLoading, error, refresh } = useFileChanges(
     workingDirectory,
     true,
@@ -86,7 +82,6 @@ export function FileChangesPanel({
         vscodeRunning={showVSCode && activeVSCode.isRunning}
         onRefresh={refresh}
         onToggleVSCode={handleToggleVSCode}
-        onClose={onClose}
       />
       {showVSCode ? (
         <VSCodeEditor

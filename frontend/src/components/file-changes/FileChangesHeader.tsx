@@ -2,7 +2,6 @@ import { useTranslation } from "react-i18next";
 import {
   CodeBracketSquareIcon,
   ArrowPathIcon,
-  XMarkIcon,
 } from "@heroicons/react/24/outline";
 
 interface FileChangesHeaderProps {
@@ -12,7 +11,6 @@ interface FileChangesHeaderProps {
   actionsDisabled?: boolean;
   onRefresh: () => void;
   onToggleVSCode: () => void;
-  onClose: () => void;
 }
 
 export function FileChangesHeader({
@@ -22,7 +20,6 @@ export function FileChangesHeader({
   actionsDisabled = false,
   onRefresh,
   onToggleVSCode,
-  onClose,
 }: FileChangesHeaderProps) {
   const { t } = useTranslation();
   const disabledTitle = t("fileChanges.remoteUnsupported");
@@ -58,21 +55,14 @@ export function FileChangesHeader({
         <button
           onClick={onToggleVSCode}
           disabled={actionsDisabled}
-          className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 ${
+          className={`p-1 rounded transition-all ${
             vscodeRunning
-              ? "text-blue-500 hover:text-blue-700 dark:text-blue-400"
-              : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              ? "bg-blue-500 dark:bg-blue-600 text-white shadow-sm"
+              : "hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           } disabled:opacity-50`}
           title={vscodeTitle}
         >
           <CodeBracketSquareIcon className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-          title={t("chat.dismiss")}
-        >
-          <XMarkIcon className="w-4 h-4" />
         </button>
       </div>
     </div>
