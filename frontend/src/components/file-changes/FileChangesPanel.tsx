@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { FileChangesHeader } from "./FileChangesHeader";
 import { FileChangesList } from "./FileChangesList";
@@ -37,10 +37,14 @@ export function FileChangesPanel({
   const remoteVSCode = useRemoteVSCode();
   const [showVSCode, setShowVSCode] = useState(false);
 
-  // Get the active VSCode state based on mode
-  const activeVSCode = remoteWorkspace
-    ? { isRunning: remoteVSCode.isRunning, isLoading: remoteVSCode.isLoading, error: remoteVSCode.error, url: remoteVSCode.url }
-    : { isRunning: localVSCode.isRunning, isLoading: localVSCode.isLoading, error: localVSCode.error, url: localVSCode.url };
+  // Get the active VSCode state based on mode (memoized to avoid unnecessary re-renders)
+  const activeVSCode = useMemo(
+    () =>
+      remoteWorkspace
+        ? { isRunning: remoteVSCode.isRunning, isLoading: remoteVSCode.isLoading, error: remoteVSCode.error, url: remoteVSCode.url }
+        : { isRunning: localVSCode.isRunning, isLoading: localVSCode.isLoading, error: localVSCode.error, url: localVSCode.url },
+    [remoteWorkspace, remoteVSCode, localVSCode],
+  );
 
   const handleToggleVSCode = useCallback(async () => {
     if (showVSCode) {

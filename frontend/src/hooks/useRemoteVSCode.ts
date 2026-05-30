@@ -96,6 +96,7 @@ export function useRemoteVSCode(): RemoteVSCodeState {
         console.warn("Failed to stop remote VSCode:", err);
       }
     }
+    if (!mountedRef.current) return;
     setIsRunning(false);
     setUrl(null);
     setError(null);
