@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { FileChangesHeader } from "./FileChangesHeader";
 import { FileChangesList } from "./FileChangesList";
 import { VSCodeEditor } from "./VSCodeEditor";
 import { useFileChanges } from "../../hooks/useFileChanges";
 import { useVSCode } from "../../hooks/useVSCode";
+import { useRemoteVSCode } from "../../hooks/useRemoteVSCode";
 import type { FileChange } from "../../types/fileChanges";
 
 interface FileChangesPanelProps {
@@ -13,6 +14,7 @@ interface FileChangesPanelProps {
   onClose: () => void;
   onVSCodeOpenChange?: (isOpen: boolean) => void;
   remoteWorkspace?: boolean;
+  machineId?: string;
 }
 
 export function FileChangesPanel({
@@ -21,31 +23,55 @@ export function FileChangesPanel({
   onClose,
   onVSCodeOpenChange,
   remoteWorkspace = false,
+  machineId,
 }: FileChangesPanelProps) {
   const { t } = useTranslation();
   const { files, isLoading, error, refresh } = useFileChanges(
     workingDirectory,
-    !remoteWorkspace,
+    true,
+    remoteWorkspace,
+    machineId,
   );
-  const vscode = useVSCode();
+  // Local and remote VSCode hooks - choose based on mode
+  const localVSCode = useVSCode();
+  const remoteVSCode = useRemoteVSCode();
   const [showVSCode, setShowVSCode] = useState(false);
 
-  const handleToggleVSCode = useCallback(async () => {
-    if (remoteWorkspace) return;
+  // Get the active VSCode state based on mode (memoized to avoid unnecessary re-renders)
+  const activeVSCode = useMemo(
+    () =>
+      remoteWorkspace
+        ? { isRunning: remoteVSCode.isRunning, isLoading: remoteVSCode.isLoading, error: remoteVSCode.error, url: remoteVSCode.url }
+        : { isRunning: localVSCode.isRunning, isLoading: localVSCode.isLoading, error: localVSCode.error, url: localVSCode.url },
+    [remoteWorkspace, remoteVSCode, localVSCode],
+  );
 
+  const handleToggleVSCode = useCallback(async () => {
     if (showVSCode) {
-      await vscode.stop();
+      if (remoteWorkspace) {
+        await remoteVSCode.stop(machineId || "");
+      } else {
+        await localVSCode.stop();
+      }
       setShowVSCode(false);
     } else if (workingDirectory) {
       setShowVSCode(true);
-      await vscode.start(workingDirectory);
+      if (remoteWorkspace && machineId) {
+        await remoteVSCode.start(machineId, workingDirectory);
+      } else {
+        await localVSCode.start(workingDirectory);
+      }
     }
-  }, [remoteWorkspace, showVSCode, workingDirectory, vscode]);
+  }, [remoteWorkspace, showVSCode, workingDirectory, machineId, localVSCode, remoteVSCode]);
 
   const handleCloseVSCode = useCallback(async () => {
-    await vscode.stop();
+    if (remoteWorkspace) {
+      await remoteVSCode.stop(machineId || "");
+    } else {
+      await localVSCode.stop();
+    }
     setShowVSCode(false);
-  }, [vscode]);
+  }, [remoteWorkspace, machineId, localVSCode, remoteVSCode]);
 
   useEffect(() => {
     onVSCodeOpenChange?.(showVSCode);
@@ -57,17 +83,16 @@ export function FileChangesPanel({
       <FileChangesHeader
         fileCount={files.length}
         isLoading={isLoading}
-        vscodeRunning={showVSCode && vscode.isRunning}
-        actionsDisabled={remoteWorkspace}
+        vscodeRunning={showVSCode && activeVSCode.isRunning}
         onRefresh={refresh}
         onToggleVSCode={handleToggleVSCode}
         onClose={onClose}
       />
       {showVSCode ? (
         <VSCodeEditor
-          url={vscode.url}
-          isLoading={vscode.isLoading}
-          error={vscode.error}
+          url={activeVSCode.url}
+          isLoading={activeVSCode.isLoading}
+          error={activeVSCode.error}
           onClose={handleCloseVSCode}
         />
       ) : (
@@ -75,9 +100,6 @@ export function FileChangesPanel({
           files={files}
           isLoading={isLoading}
           error={error}
-          emptyMessage={
-            remoteWorkspace ? t("fileChanges.remoteUnsupported") : undefined
-          }
           onFileClick={onOpenDiff}
         />
       )}

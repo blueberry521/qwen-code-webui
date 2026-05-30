@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { FileChange, GitStatusResponse } from "../types/fileChanges";
 import { getGitStatusUrl } from "../config/api";
+import { fetchRemoteGitStatus } from "../api/openace";
 
 interface FileChangesResult {
   files: FileChange[];
@@ -15,6 +16,8 @@ const POLL_INTERVAL = 5000;
 export function useFileChanges(
   workingDirectory: string | undefined,
   enabled = true,
+  remoteWorkspace = false,
+  machineId?: string,
 ): FileChangesResult {
   const [files, setFiles] = useState<FileChange[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +27,8 @@ export function useFileChanges(
   const fetchStatus = useCallback(
     async (showLoading = true) => {
       if (!enabled || !workingDirectory) return;
+      // Remote mode requires machineId
+      if (remoteWorkspace && !machineId) return;
 
       if (showLoading) {
         setIsLoading(true);
@@ -33,13 +38,23 @@ export function useFileChanges(
       }
 
       try {
-        const url = getGitStatusUrl(workingDirectory);
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        if (remoteWorkspace && machineId) {
+          // Remote mode: fetch via Open-ACE proxy
+          const data = await fetchRemoteGitStatus(machineId, workingDirectory);
+          if (!data.success) {
+            throw new Error(data.error || "Failed to load remote changes");
+          }
+          setFiles(data.result?.files || []);
+        } else {
+          // Local mode: use local git API (unchanged behavior)
+          const url = getGitStatusUrl(workingDirectory);
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const data: GitStatusResponse = await response.json();
+          setFiles(data.files);
         }
-        const data: GitStatusResponse = await response.json();
-        setFiles(data.files);
       } catch (err) {
         if (showLoading) {
           setError(
@@ -53,7 +68,7 @@ export function useFileChanges(
         setLastUpdated(new Date());
       }
     },
-    [enabled, workingDirectory],
+    [enabled, workingDirectory, remoteWorkspace, machineId],
   );
 
   const refresh = useCallback(() => {

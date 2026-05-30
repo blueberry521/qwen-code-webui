@@ -702,3 +702,160 @@ export function createRemoteSessionStream(
   };
   return es;
 }
+
+// -------------------------------------------------------
+// Remote Git API functions
+// -------------------------------------------------------
+
+/**
+ * Fetch git status from a remote machine via Open-ACE proxy.
+ * Only called in remote workspace mode (workspaceType=remote).
+ */
+export async function fetchRemoteGitStatus(
+  machineId: string,
+  projectPath: string
+): Promise<{ success: boolean; result?: { files: any[] }; error?: string }> {
+  const url = buildOpenAceUrl(
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/status?path=${encodeURIComponent(projectPath)}`
+  );
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch remote git status: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch git diff for a file from a remote machine via Open-ACE proxy.
+ * Only called in remote workspace mode (workspaceType=remote).
+ */
+export async function fetchRemoteGitDiff(
+  machineId: string,
+  projectPath: string,
+  file: string
+): Promise<{
+  success: boolean;
+  result?: { file: string; diff: string; originalContent: string; modifiedContent: string };
+  error?: string;
+}> {
+  const url = buildOpenAceUrl(
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/diff?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
+  );
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch remote git diff: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Read a file from a remote machine via Open-ACE proxy.
+ * Only called in remote workspace mode (workspaceType=remote).
+ */
+export async function fetchRemoteGitFile(
+  machineId: string,
+  projectPath: string,
+  file: string
+): Promise<{ success: boolean; result?: { file: string; content: string }; error?: string }> {
+  const url = buildOpenAceUrl(
+    `/api/remote/machines/${encodeURIComponent(machineId)}/git/file?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
+  );
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch remote file: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// -------------------------------------------------------
+// Remote VSCode (code-server) API functions
+// -------------------------------------------------------
+
+/**
+ * Start a code-server instance on a remote machine.
+ * Only called in remote workspace mode (workspaceType=remote).
+ */
+export async function startRemoteVSCode(
+  machineId: string,
+  projectPath: string
+): Promise<{ success: boolean; vscode_id?: string; status?: string; error?: string }> {
+  const url = buildOpenAceUrl("/api/remote/vscode/start");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ machine_id: machineId, project_path: projectPath }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Failed to start VSCode: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Stop a code-server instance on a remote machine.
+ */
+export async function stopRemoteVSCode(
+  vscodeId: string,
+  machineId: string
+): Promise<{ success: boolean }> {
+  const url = buildOpenAceUrl("/api/remote/vscode/stop");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vscode_id: vscodeId, machine_id: machineId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to stop VSCode: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get the status of a code-server instance.
+ */
+export async function getRemoteVSCodeStatus(
+  vscodeId: string
+): Promise<{
+  success: boolean;
+  status: string;
+  url?: string;
+  error?: string;
+}> {
+  const url = buildOpenAceUrl(`/api/remote/vscode/${vscodeId}/status`);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get VSCode status: ${response.statusText}`);
+  }
+
+  return response.json();
+}
