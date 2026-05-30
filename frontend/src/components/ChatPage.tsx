@@ -1600,7 +1600,6 @@ export function ChatPage() {
                 onClick={toggleExpandThinking}
               />
             )}
-            {!isHistoryView && <HistoryButton onClick={handleHistoryClick} />}
             {!isHistoryView && (
               <button
                 onClick={handleToggleFileChangesPanel}
@@ -1629,6 +1628,7 @@ export function ChatPage() {
                 />
               </button>
             )}
+            {!isHistoryView && <HistoryButton onClick={handleHistoryClick} />}
             <SettingsButton onClick={handleSettingsClick} />
           </div>
         </div>
@@ -1804,7 +1804,6 @@ export function ChatPage() {
                   <FileChangesPanel
                     workingDirectory={workingDirectory}
                     onOpenDiff={(file) => setSelectedDiffFile(file)}
-                    onClose={() => setFileChangesPanelVisible(false)}
                     onVSCodeOpenChange={setIsVSCodePanelOpen}
                     remoteWorkspace={isRemoteWorkspace}
                     machineId={remoteMachineId || undefined}
