@@ -77,7 +77,8 @@ const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_direc
 // Tools that should be auto-approved without a permission dialog because the
 // WebUI cannot provide the interactive response the tool expects. The tool
 // executes with default/empty input and the AI adjusts its follow-up.
-const AUTO_APPROVE_NO_DIALOG_TOOLS = new Set(["ask_user_question"]);
+// Currently empty - ask_user_question now has full dialog support.
+const AUTO_APPROVE_NO_DIALOG_TOOLS: Set<string> = new Set([]);
 
 function extractBaseCommand(command: string): string {
   return command.trim().split(/\s+/)[0] || "";
@@ -235,6 +236,56 @@ async function executeQwenCommand(
           }))
         : undefined;
 
+      // For ask_user_question tool, extract and validate questions from input
+      const confirmationType = toolName === "ask_user_question" ? "ask_user_question" : "default";
+      let questions:
+        | Array<{
+            question: string;
+            header: string;
+            options: Array<{ label: string; description?: string }>;
+            multiSelect: boolean;
+          }>
+        | undefined;
+
+      if (toolName === "ask_user_question" && input?.questions) {
+        // Runtime validation for questions array
+        const rawQuestions = input.questions;
+        if (
+          Array.isArray(rawQuestions) &&
+          rawQuestions.length >= 1 &&
+          rawQuestions.length <= 4 &&
+          rawQuestions.every((q) =>
+            typeof q === "object" &&
+            q !== null &&
+            typeof q.question === "string" &&
+            typeof q.header === "string" &&
+            Array.isArray(q.options) &&
+            q.options.length >= 2 &&
+            q.options.length <= 4 &&
+            q.options.every((o) =>
+              typeof o === "object" &&
+              o !== null &&
+              typeof o.label === "string"
+            ) &&
+            typeof q.multiSelect === "boolean"
+          )
+        ) {
+          questions = rawQuestions.map((q) => ({
+            question: String(q.question),
+            header: String(q.header).substring(0, 12), // Limit header to 12 chars
+            options: q.options.map((o) => ({
+              label: String(o.label),
+              description: o.description ? String(o.description) : undefined,
+            })),
+            multiSelect: Boolean(q.multiSelect),
+          }));
+        } else {
+          logger.chat.warn("Invalid questions format for ask_user_question tool", {
+            questions: rawQuestions,
+          });
+        }
+      }
+
       if (
         !enqueue({
           type: "permission_request",
@@ -243,6 +294,8 @@ async function executeQwenCommand(
           toolInput: input,
           suggestions,
           autoApproveMs: AUTO_APPROVE_MS,
+          confirmationType,
+          questions,
         })
       ) {
         localPendingIds.delete(permissionId);
