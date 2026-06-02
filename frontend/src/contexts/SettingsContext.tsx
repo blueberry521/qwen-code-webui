@@ -41,14 +41,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isEmbeddedMode) return;
 
+    // Get trusted origin from URL parameter (handles cross-origin iframe scenario)
+    const urlParams = new URLSearchParams(window.location.search);
+    const openaceUrl = urlParams.get("openace_url");
+    const trustedOrigin = openaceUrl ? new URL(openaceUrl).origin : null;
+
     const handleMessage = (event: MessageEvent) => {
-      // Validate message type and origin for security (defensive programming)
+      // Validate message type
       if (event.data?.type !== "openace-theme-change") return;
 
-      // Accept messages from parent window (same origin check for embedded iframe)
-      // In iframe context, parent window is the trusted source
-      const parentOrigin = window.parent.location.origin;
-      if (event.origin !== parentOrigin) {
+      // Validate origin for security (use openace_url parameter for cross-origin scenario)
+      // When iframe is cross-origin, we cannot access window.parent.location.origin
+      // Instead, we use the openace_url parameter passed from parent
+      if (trustedOrigin && event.origin !== trustedOrigin) {
         console.warn("Received theme change from untrusted origin:", event.origin);
         return;
       }
