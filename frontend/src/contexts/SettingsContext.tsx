@@ -42,12 +42,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (!isEmbeddedMode) return;
 
     const handleMessage = (event: MessageEvent) => {
-      // Validate message origin for security
-      if (event.data?.type === "openace-theme-change") {
-        const newTheme = event.data.theme;
-        if (newTheme === "dark" || newTheme === "light") {
-          setSettingsState((prev) => ({ ...prev, theme: newTheme as Theme }));
-        }
+      // Validate message type and origin for security (defensive programming)
+      if (event.data?.type !== "openace-theme-change") return;
+
+      // Accept messages from parent window (same origin check for embedded iframe)
+      // In iframe context, parent window is the trusted source
+      const parentOrigin = window.parent.location.origin;
+      if (event.origin !== parentOrigin) {
+        console.warn("Received theme change from untrusted origin:", event.origin);
+        return;
+      }
+
+      const newTheme = event.data.theme;
+      if (newTheme === "dark" || newTheme === "light") {
+        setSettingsState((prev) => ({ ...prev, theme: newTheme as Theme }));
       }
     };
 
