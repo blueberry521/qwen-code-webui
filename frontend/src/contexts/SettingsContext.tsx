@@ -15,6 +15,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   );
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // Detect if running in iframe (embedded mode)
+  const isEmbeddedMode = useMemo(
+    () => typeof window !== "undefined" && window.parent !== window,
+    [],
+  );
+
   // Initialize settings on client side (handles migration automatically)
   // Also check for URL parameter theme override (Issue #104 - iframe theme sync)
   useEffect(() => {
@@ -30,6 +36,24 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setSettingsState(initialSettings);
     setIsInitialized(true);
   }, []);
+
+  // Listen for postMessage theme updates from parent window (Issue #104 - realtime sync)
+  useEffect(() => {
+    if (!isEmbeddedMode) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      // Validate message origin for security
+      if (event.data?.type === "openace-theme-change") {
+        const newTheme = event.data.theme;
+        if (newTheme === "dark" || newTheme === "light") {
+          setSettingsState((prev) => ({ ...prev, theme: newTheme as Theme }));
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [isEmbeddedMode]);
 
   // Apply theme changes to document when settings change
   useEffect(() => {
@@ -85,12 +109,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       enterBehavior: settings.enterBehavior,
       experimental,
       expandThinking: settings.expandThinking ?? true, // Default to expanded
+      isEmbeddedMode,
       toggleTheme,
       toggleEnterBehavior,
       toggleExpandThinking,
       updateSettings,
     }),
-    [settings, experimental, toggleTheme, toggleEnterBehavior, toggleExpandThinking, updateSettings],
+    [settings, experimental, isEmbeddedMode, toggleTheme, toggleEnterBehavior, toggleExpandThinking, updateSettings],
   );
 
   return (
