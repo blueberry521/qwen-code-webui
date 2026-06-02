@@ -3,6 +3,7 @@ import type {
   AppSettings,
   SettingsContextType,
   ExperimentalFeatures,
+  Theme,
 } from "../types/settings";
 import { getSettings, setSettings } from "../utils/storage";
 import { SettingsContext } from "./SettingsContextTypes";
@@ -15,8 +16,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Initialize settings on client side (handles migration automatically)
+  // Also check for URL parameter theme override (Issue #104 - iframe theme sync)
   useEffect(() => {
     const initialSettings = getSettings();
+
+    // Check URL parameter for theme override
+    const urlParams = new URLSearchParams(window.location.search);
+    const themeParam = urlParams.get("theme");
+    if (themeParam === "dark" || themeParam === "light") {
+      initialSettings.theme = themeParam as Theme;
+    }
+
     setSettingsState(initialSettings);
     setIsInitialized(true);
   }, []);
