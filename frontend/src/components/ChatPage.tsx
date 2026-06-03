@@ -1041,6 +1041,7 @@ export function ChatPage() {
   }, [
     permissionRequest,
     allowedTools,
+    allowToolPermanent,
     closePermissionRequest,
     resetDenialCounter,
     clearNotification,
@@ -1114,26 +1115,27 @@ export function ChatPage() {
     resetDenialCounter();
     clearNotification();
 
-    if (permissionRequest.permissionId) {
-      // Persist bare tool name so ALL run_shell_command calls are auto-approved
-      allowToolPermanent(permissionRequest.toolName, allowedTools);
-      try {
-        const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
-          updatedInput: permissionRequest.toolInput || {},
-          scope: "all",
-        });
-        if (!resp.ok) {
-          console.warn("Permission response failed:", resp.status);
-          await handlePermissionAbort();
-        }
-      } catch (error) {
-        console.error("Failed to send permission response:", error);
-        await handlePermissionAbort();
-      }
+    // Defensive guard: the UI only renders "allow all" for proactive requests.
+    if (!permissionRequest.permissionId) {
       closePermissionRequest();
       return;
     }
 
+    // Persist bare tool name so ALL run_shell_command calls are auto-approved
+    allowToolPermanent(permissionRequest.toolName, allowedTools);
+    try {
+      const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
+        updatedInput: permissionRequest.toolInput || {},
+        scope: "all",
+      });
+      if (!resp.ok) {
+        console.warn("Permission response failed:", resp.status);
+        await handlePermissionAbort();
+      }
+    } catch (error) {
+      console.error("Failed to send permission response:", error);
+      await handlePermissionAbort();
+    }
     closePermissionRequest();
   }, [
     permissionRequest,
