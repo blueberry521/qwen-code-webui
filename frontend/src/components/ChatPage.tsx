@@ -1380,7 +1380,7 @@ export function ChatPage() {
         aborted,
       });
     },
-    [abortLocalRequest, isLoading, currentRequestId, resetRequestState, isRemoteWorkspace, remoteChat],
+    [abortLocalRequest, isLoading, currentRequestId, isRemoteWorkspace, remoteChat],
   );
   thinkingTimeoutRef.current = handleThinkingTimeout;
 

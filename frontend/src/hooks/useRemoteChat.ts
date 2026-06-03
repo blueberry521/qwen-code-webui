@@ -425,7 +425,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         err instanceof Error ? err.message : "Failed to stop remote session"
       );
     }
-  }, [session]);
+  }, [clearAbortAckTimer, session]);
 
   const resetSession = useCallback(async () => {
     if (session) {
