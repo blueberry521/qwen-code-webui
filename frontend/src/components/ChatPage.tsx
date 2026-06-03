@@ -334,7 +334,7 @@ export function ChatPage() {
               notificationTriggeredRef.current = true;
               commandLoopShowRef.current?.(request);
               // Auto-abort the remote request
-              remoteChat.abortCurrentRequest();
+              remoteChat.abortCurrentRequest("system");
               // Clear sessionId on fatal session errors
               if (request.errorOutput?.toLowerCase().includes("input closed")) {
                 setCurrentSessionId(null);
@@ -944,7 +944,7 @@ export function ChatPage() {
 
   const handleAbort = useCallback(() => {
     if (isRemoteWorkspace && remoteChat.session) {
-      void remoteChat.abortCurrentRequest();
+      void remoteChat.abortCurrentRequest("user");
       return;
     }
     void abortLocalRequest(currentRequestId, { reason: "user" });
@@ -967,7 +967,7 @@ export function ChatPage() {
     // Abort any in-flight request to prevent stale messages
     clearAbortRef.current = true;
     if (isRemoteWorkspace && remoteChat.session) {
-      void remoteChat.abortCurrentRequest();
+      void remoteChat.abortCurrentRequest("system");
     } else {
       void abortLocalRequest(currentRequestId, { reason: "system", resetState: true });
     }
@@ -1368,8 +1368,7 @@ export function ChatPage() {
         void abortLocalRequest(currentRequestId, { reason: "system" });
         aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
-        remoteChat.abortCurrentRequest();
-        resetRequestState();
+        remoteChat.abortCurrentRequest("timeout");
         aborted = true;
       }
 
