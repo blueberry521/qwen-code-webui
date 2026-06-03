@@ -528,7 +528,8 @@ export async function getRemoteSessionStatus(
  * Abort the current in-progress request without stopping the session
  */
 export async function abortRemoteRequest(
-  sessionId: string
+  sessionId: string,
+  reason = "user"
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/abort`);
 
@@ -537,6 +538,7 @@ export async function abortRemoteRequest(
     headers: {
       "Content-Type": "application/json",
     },
+    body: JSON.stringify({ reason }),
   });
 
   if (!response.ok) {
