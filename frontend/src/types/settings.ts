@@ -31,6 +31,8 @@ export interface SettingsContextType {
   enterBehavior: EnterBehavior;
   experimental: ExperimentalFeatures;
   expandThinking: boolean;
+  /** Whether running in iframe (embedded mode) - theme controlled by parent */
+  isEmbeddedMode: boolean;
   toggleTheme: () => void;
   toggleEnterBehavior: () => void;
   toggleExpandThinking: () => void;

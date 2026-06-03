@@ -6,6 +6,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ArrowPathIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../hooks/useSettings";
@@ -28,6 +29,7 @@ export function GeneralSettings({ allowedTools = [], onResetPermissions }: Gener
     enterBehavior,
     experimental,
     expandThinking,
+    isEmbeddedMode,
     toggleTheme,
     toggleEnterBehavior,
     toggleExpandThinking,
@@ -70,29 +72,51 @@ export function GeneralSettings({ allowedTools = [], onResetPermissions }: Gener
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 block">
               {t("settings.theme")}
             </label>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={toggleTheme}
-                className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200 text-left flex-1"
-                role="switch"
-                aria-checked={theme === "dark"}
-                aria-label={`Theme toggle. Currently set to ${theme} mode. Click to switch to ${theme === "light" ? "dark" : "light"} mode.`}
-              >
+            {isEmbeddedMode ? (
+              // In embedded mode, show current theme with info message
+              <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg">
                 {theme === "light" ? (
                   <SunIcon className="w-5 h-5 text-yellow-500" />
                 ) : (
                   <MoonIcon className="w-5 h-5 text-blue-400" />
                 )}
-                <div>
+                <div className="flex-1">
                   <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
                     {theme === "light" ? t("settings.lightMode") : t("settings.darkMode")}
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {theme === "light" ? t("settings.darkMode") : t("settings.lightMode")}
+                  <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <InformationCircleIcon className="w-3 h-3" />
+                    Theme follows parent window settings
                   </div>
                 </div>
-              </button>
-            </div>
+              </div>
+            ) : (
+              // Normal mode: show toggle button
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleTheme}
+                  className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200 text-left flex-1"
+                  role="switch"
+                  aria-checked={theme === "dark"}
+                  aria-label={`Theme toggle. Currently set to ${theme} mode. Click to switch to ${theme === "light" ? "dark" : "light"} mode.`}
+                >
+                  {theme === "light" ? (
+                    <SunIcon className="w-5 h-5 text-yellow-500" />
+                  ) : (
+                    <MoonIcon className="w-5 h-5 text-blue-400" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {theme === "light" ? "Light Mode" : "Dark Mode"}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Click to switch to {theme === "light" ? "dark" : "light"}{" "}
+                      mode
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Language Setting */}
@@ -120,8 +144,8 @@ export function GeneralSettings({ allowedTools = [], onResetPermissions }: Gener
               </select>
             </div>
             <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {i18n.language === "zh-CN" 
-                ? "选择界面显示语言" 
+              {i18n.language === "zh-CN"
+                ? "选择界面显示语言"
                 : "Select the interface display language"}
             </div>
           </div>
@@ -181,7 +205,7 @@ export function GeneralSettings({ allowedTools = [], onResetPermissions }: Gener
                 )}
                 <div>
                   <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                    {expandThinking 
+                    {expandThinking
                       ? (i18n.language === "zh-CN" ? "已展开" : "Thinking Expanded")
                       : (i18n.language === "zh-CN" ? "已折叠" : "Thinking Collapsed")}
                   </div>
@@ -231,7 +255,7 @@ export function GeneralSettings({ allowedTools = [], onResetPermissions }: Gener
                 </div>
                 <div>
                   <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                    {experimental.useWebUIComponents 
+                    {experimental.useWebUIComponents
                       ? (i18n.language === "zh-CN" ? "已启用" : "Enabled")
                       : (i18n.language === "zh-CN" ? "已禁用" : "Disabled")}
                   </div>
