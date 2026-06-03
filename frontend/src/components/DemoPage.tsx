@@ -135,12 +135,11 @@ export function DemoPage() {
     closePlanModeRequest,
   } = usePermissions();
 
-  const handlePermissionError = useCallback(
+  const handlePermissionRequest = useCallback(
     (toolName: string, patterns: string[], toolUseId: string) => {
-      // Check if this is an ExitPlanMode permission error
+      // Route ExitPlanMode requests to the plan approval UI
       if (patterns.includes(TOOL_NAMES.EXIT_PLAN_MODE)) {
-        // For ExitPlanMode, show plan permission interface instead of regular permission
-        showPlanModeRequest(""); // Empty plan content since it was already displayed
+        showPlanModeRequest("");
       } else {
         showPermissionRequest(toolName, patterns, toolUseId);
       }
@@ -319,7 +318,7 @@ export function DemoPage() {
     startRequest,
     resetRequestState,
     generateRequestId,
-    showPermissionRequest: handlePermissionError,
+    showPermissionRequest: handlePermissionRequest,
     onButtonFocus: handleButtonFocus,
     onButtonClick: handleButtonClick,
   });

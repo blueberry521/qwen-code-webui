@@ -102,9 +102,6 @@ export function useDemoAutomation(
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cache tool names from assistant messages for permission error handling
-  const toolNameCacheRef = useRef<Map<string, string>>(new Map());
-
   // Chat state (fallback if not provided externally)
   const chatState = useChatState();
   const {
@@ -182,16 +179,16 @@ export function useDemoAutomation(
   // Process stream data
   const processStreamData = useCallback(
     (step: MockScenarioStep) => {
-      if (step.type === "permission_error") {
-        const errorData = step.data as {
+      if (step.type === "permission_request") {
+        const requestData = step.data as {
           toolName: string;
           pattern: string;
           toolUseId: string;
         };
         finalShowPermissionRequest(
-          errorData.toolName,
-          [errorData.pattern],
-          errorData.toolUseId,
+          requestData.toolName,
+          [requestData.pattern],
+          requestData.toolUseId,
         );
         return;
       }
@@ -262,11 +259,6 @@ export function useDemoAutomation(
                 input: Record<string, unknown>;
               };
 
-              // Cache tool name for permission error lookup
-              if (toolUse.id && toolUse.name) {
-                toolNameCacheRef.current.set(toolUse.id, toolUse.name);
-              }
-
               // Special handling for ExitPlanMode - create plan message instead of tool message
               if (toolUse.name === TOOL_NAMES.EXIT_PLAN_MODE) {
                 const planContent = (toolUse.input?.plan as string) || "";
@@ -294,7 +286,6 @@ export function useDemoAutomation(
         }
 
         case "user": {
-          // Handle user messages containing tool results (like ExitPlanMode)
           const userMsg = sdkMessage as Extract<SDKMessage, { type: "user" }>;
           const messageContent = userMsg.message.content;
 
@@ -308,39 +299,11 @@ export function useDemoAutomation(
                   is_error?: boolean;
                 };
 
-                // Check for permission errors (similar to useToolHandling.ts)
-                if (
-                  toolResult.is_error &&
-                  !toolResult.content.includes("tool_use_error")
-                ) {
-                  // For demo, we need to trigger permission dialog
-                  // Since this is ExitPlanMode, show plan permission request
-                  if (toolResult.content === "Exit plan mode?") {
-                    // This indicates an ExitPlanMode permission error
-                    // Check if showPlanModeRequest is available (it should be from usePermissions)
-                    // For now, trigger regular permission request with ExitPlanMode pattern
-                    // The ChatPage.tsx logic will convert this to plan mode request
-                    finalShowPermissionRequest(
-                      TOOL_NAMES.EXIT_PLAN_MODE,
-                      [TOOL_NAMES.EXIT_PLAN_MODE],
-                      toolResult.tool_use_id,
-                    );
-                  } else {
-                    // For other tool permission errors, look up cached tool name
-                    const cachedToolName = toolNameCacheRef.current.get(toolResult.tool_use_id) || "Unknown";
-                    finalShowPermissionRequest(
-                      cachedToolName,
-                      [cachedToolName],
-                      toolResult.tool_use_id,
-                    );
-                  }
-                } else {
-                  const toolResultMessage = createToolResultMessage(
-                    "Tool result",
-                    toolResult.content,
-                  );
-                  finalAddMessage(toolResultMessage);
-                }
+                const toolResultMessage = createToolResultMessage(
+                  "Tool result",
+                  toolResult.content,
+                );
+                finalAddMessage(toolResultMessage);
               }
             }
           }
