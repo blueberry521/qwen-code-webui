@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { StopIcon } from "@heroicons/react/24/solid";
+import { ArrowPathIcon, StopIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
 import { UI_CONSTANTS, KEYBOARD_SHORTCUTS } from "../../utils/constants";
 import { useEnterBehavior } from "../../hooks/useSettings";
@@ -52,6 +52,7 @@ interface PlanPermissionData {
 interface ChatInputProps {
   input: string;
   isLoading: boolean;
+  isStopping?: boolean;
   currentRequestId: string | null;
   onInputChange: (value: string) => void;
   onSubmit: () => void;
@@ -74,6 +75,7 @@ interface ChatInputProps {
 export function ChatInput({
   input,
   isLoading,
+  isStopping = false,
   currentRequestId,
   onInputChange,
   onSubmit,
@@ -420,9 +422,14 @@ export function ChatInput({
                 type="button"
                 onClick={onAbort}
                 className="p-2 bg-red-100 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
-                title={t("chat.stop")}
+                title={isStopping ? t("chat.stopping") : t("chat.stop")}
+                aria-label={isStopping ? t("chat.stopping") : t("chat.stop")}
               >
-                <StopIcon className="w-4 h-4" />
+                {isStopping ? (
+                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                ) : (
+                  <StopIcon className="w-4 h-4" />
+                )}
               </button>
             )}
             <button

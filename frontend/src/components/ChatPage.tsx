@@ -1891,6 +1891,7 @@ export function ChatPage() {
               <ChatInput
                 input={input}
                 isLoading={effectiveIsLoading}
+                isStopping={isRemoteWorkspace && remoteChat.isStopping}
                 currentRequestId={currentRequestId}
                 onInputChange={setInput}
                 onSubmit={() => sendMessage()}

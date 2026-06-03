@@ -59,6 +59,7 @@
   },
   "chat": {
     "processing": "处理中...",
+    "stopping": "正在停止...",
     "typeMessage": "输入消息...",
     "send": "发送",
     "plan": "计划",
