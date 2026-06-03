@@ -26,8 +26,8 @@ export function handleAbortRequest(
 
   const abortController = requestAbortControllers.get(requestId);
   if (abortController) {
-    abortController.abort();
     signalTrackedCliAbort(requestId, "user");
+    abortController.abort();
 
     logger.api.debug(`Aborted request: ${requestId}`);
 

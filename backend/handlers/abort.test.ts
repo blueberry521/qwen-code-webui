@@ -35,12 +35,16 @@ describe("handleAbortRequest", () => {
     const ctx = createMockContext("req-1");
     const abortController = new AbortController();
     requestAbortControllers.set("req-1", abortController);
+    const spy = vi.spyOn(abortController, "abort");
 
     handleAbortRequest(ctx, requestAbortControllers);
 
+    expect(signalTrackedCliAbort).toHaveBeenCalledWith("req-1", "user");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(signalTrackedCliAbort).mock.invocationCallOrder[0])
+      .toBeLessThan(spy.mock.invocationCallOrder[0]);
     expect(abortController.signal.aborted).toBe(true);
     expect(requestAbortControllers.has("req-1")).toBe(true);
-    expect(signalTrackedCliAbort).toHaveBeenCalledWith("req-1", "user");
     expect(ctx.json).toHaveBeenCalledWith({ success: true, message: "Request aborted" });
   });
 
