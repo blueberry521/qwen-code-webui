@@ -1,5 +1,6 @@
 import { Context } from "hono";
 import { logger } from "../utils/logger.ts";
+import { signalTrackedCliAbort } from "../utils/cliProcessRegistry.ts";
 
 /**
  * Handles POST /api/abort/:requestId requests
@@ -26,7 +27,7 @@ export function handleAbortRequest(
   const abortController = requestAbortControllers.get(requestId);
   if (abortController) {
     abortController.abort();
-    requestAbortControllers.delete(requestId);
+    signalTrackedCliAbort(requestId, "user");
 
     logger.api.debug(`Aborted request: ${requestId}`);
 

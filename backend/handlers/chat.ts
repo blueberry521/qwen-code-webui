@@ -1,9 +1,17 @@
 import { Context } from "hono";
-import { query, type PermissionMode, type AuthType, type PermissionResult } from "@qwen-code/sdk";
+import type { PermissionMode, AuthType, PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
 import { bridgeSession } from "../utils/sessionBridge.ts";
+import {
+  finalizeTrackedCliRequest,
+  registerTrackedCliRequest,
+  runWithTrackedCliRequest,
+  signalTrackedCliAbort,
+  updateTrackedCliSessionId,
+} from "../utils/cliProcessRegistry.ts";
+import { loadQwenQuery } from "../utils/qwenSdk.ts";
 import type { PendingPermission } from "./permission.ts";
 import type { ServerResponse } from "node:http";
 
@@ -47,6 +55,16 @@ const CLI_CONTROL_REQUEST_TIMEOUT_MS = 30_000;
 const AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 5_000; // 25 s
 /** Backend fallback — fires a few seconds after frontend should have acted. */
 const SAFETY_AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 2_000; // 28 s
+
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.name === "AbortError" || error.message === "Operation aborted";
+}
 
 /**
  * Maps UI permission mode to Qwen SDK permission mode
@@ -102,7 +120,8 @@ async function executeQwenCommand(
   model?: string,
   authType?: AuthType,
 ): Promise<void> {
-  let abortController: AbortController;
+  let abortController: AbortController | undefined;
+  let onAbort: (() => void) | undefined;
   const localPendingIds = new Set<string>();
   // Read-only tools approved by the user during this request — auto-approved on
   // subsequent calls within the same streaming session. Scope is limited to a
@@ -128,6 +147,13 @@ async function executeQwenCommand(
     // Create and store AbortController for this request
     abortController = new AbortController();
     requestAbortControllers.set(requestId, abortController);
+    registerTrackedCliRequest(requestId, { sessionId, cliPath });
+    const query = await loadQwenQuery();
+
+    onAbort = () => {
+      signalTrackedCliAbort(requestId, "internal_abort");
+    };
+    abortController.signal.addEventListener("abort", onAbort, { once: true });
 
     // Log permission mode for debugging
     const mappedPermissionMode = permissionMode ? mapPermissionMode(permissionMode) : undefined;
@@ -162,7 +188,7 @@ async function executeQwenCommand(
       _options: { signal: AbortSignal; suggestions?: unknown[] | null },
     ): Promise<PermissionResult> => {
       // Defense 1: check main query abort (not SDK's per-request signal)
-      if (abortController.signal.aborted) {
+      if (abortController!.signal.aborted) {
         return { behavior: "deny", message: "Request aborted" };
       }
 
@@ -262,10 +288,10 @@ async function executeQwenCommand(
             Array.isArray(q.options) &&
             q.options.length >= 2 &&
             q.options.length <= 4 &&
-            q.options.every((o) =>
+            q.options.every((o: unknown) =>
               typeof o === "object" &&
               o !== null &&
-              typeof o.label === "string"
+              typeof (o as { label?: unknown }).label === "string"
             ) &&
             typeof q.multiSelect === "boolean"
           )
@@ -273,7 +299,7 @@ async function executeQwenCommand(
           questions = rawQuestions.map((q) => ({
             question: String(q.question),
             header: String(q.header).substring(0, 12), // Limit header to 12 chars
-            options: q.options.map((o) => ({
+            options: q.options.map((o: { label: string; description?: string }) => ({
               label: String(o.label),
               description: o.description ? String(o.description) : undefined,
             })),
@@ -335,12 +361,12 @@ async function executeQwenCommand(
           localPendingIds.delete(permissionId);
           safeResolve({ behavior: "deny", message: "Request aborted" });
         };
-        abortController.signal.addEventListener("abort", onAbort, { once: true });
+        abortController!.signal.addEventListener("abort", onAbort, { once: true });
 
         pendingPermissions.set(permissionId, {
           resolve: (result, scope) => {
             clearTimeout(safetyTimer);
-            abortController.signal.removeEventListener("abort", onAbort);
+            abortController!.signal.removeEventListener("abort", onAbort);
             localPendingIds.delete(permissionId);
             if (result.behavior === "allow") {
               if (scope === "specific" && toolName === "run_shell_command" && input?.command && typeof input.command === "string") {
@@ -352,73 +378,79 @@ async function executeQwenCommand(
             }
             safeResolve(result);
           },
-          abortSignal: abortController.signal,
+          abortSignal: abortController!.signal,
         });
       });
     };
 
-    for await (const sdkMessage of query({
-      prompt: processedMessage,
-      options: {
-        abortController,
-        pathToQwenExecutable: cliPath,
-        ...(sessionId ? { resume: sessionId } : {}),
-        ...(allowedTools ? { allowedTools } : {}),
-        ...(workingDirectory ? { cwd: workingDirectory } : {}),
-        ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
-        ...(model ? { model } : {}),
-        ...(authType ? { authType } : {}),
-        stderr: (message: string) => {
-          logger.chat.info("CLI stderr: {message}", { message });
+    await runWithTrackedCliRequest(requestId, async () => {
+      for await (const sdkMessage of query({
+        prompt: processedMessage,
+        options: {
+          abortController: abortController!,
+          pathToQwenExecutable: cliPath,
+          ...(sessionId ? { resume: sessionId } : {}),
+          ...(allowedTools ? { allowedTools } : {}),
+          ...(workingDirectory ? { cwd: workingDirectory } : {}),
+          ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
+          ...(model ? { model } : {}),
+          ...(authType ? { authType } : {}),
+          stderr: (message: string) => {
+            logger.chat.info("CLI stderr: {message}", { message });
+          },
+          canUseTool,
+          timeout: { canUseTool: SESSION_TIMEOUT_MS, controlRequest: SESSION_TIMEOUT_MS },
         },
-        canUseTool,
-        timeout: { canUseTool: SESSION_TIMEOUT_MS, controlRequest: SESSION_TIMEOUT_MS },
-      },
-    })) {
-      messageCount++;
-      if (firstMessageLatencyMs === null) {
-        firstMessageLatencyMs = Date.now() - startTime;
-        logger.chat.info(
-          "[DIAG] First SDK message received requestId={requestId} latencyMs={latencyMs}",
-          { requestId, latencyMs: firstMessageLatencyMs },
-        );
-      }
+      })) {
+        messageCount++;
+        if (firstMessageLatencyMs === null) {
+          firstMessageLatencyMs = Date.now() - startTime;
+          logger.chat.info(
+            "[DIAG] First SDK message received requestId={requestId} latencyMs={latencyMs}",
+            { requestId, latencyMs: firstMessageLatencyMs },
+          );
+        }
+        const sdkSessionId = (sdkMessage as Record<string, unknown>).session_id;
+        if (typeof sdkSessionId === "string") {
+          updateTrackedCliSessionId(requestId, sdkSessionId);
+        }
 
-      // Backend loop detection — failsafe if frontend detection fails.
-      // Each agent (main session or fork) maintains its own LoopState
-      // so parallel fork agents don't accumulate toward the same counter (#140).
-      const rawForkId = (sdkMessage as Record<string, unknown>).parent_tool_use_id;
-      const forkId = typeof rawForkId === "string" ? rawForkId : undefined;
-      const ls = forkId
-        ? (agentLoopStates.get(forkId) ?? { errorCount: 0, lastFingerprint: "", firstErrorTime: 0 })
-        : loopState;
-      if (forkId && !agentLoopStates.has(forkId)) {
-        agentLoopStates.set(forkId, ls);
-      }
-      const loopResult = checkLoop(sdkMessage, ls);
-      if (loopResult) {
-        logger.chat.error(
-          "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
-          { fingerprint: loopResult.fingerprint, count: loopResult.count },
-        );
-        abortController.abort();
-        const errorMessage = loopResult.fingerprint === "input_closed"
-          ? "CLI session ended unexpectedly. Please send a new message."
-          : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
+        // Backend loop detection — failsafe if frontend detection fails.
+        // Each agent (main session or fork) maintains its own LoopState
+        // so parallel fork agents don't accumulate toward the same counter (#140).
+        const rawForkId = (sdkMessage as Record<string, unknown>).parent_tool_use_id;
+        const forkId = typeof rawForkId === "string" ? rawForkId : undefined;
+        const ls = forkId
+          ? (agentLoopStates.get(forkId) ?? { errorCount: 0, lastFingerprint: "", firstErrorTime: 0 })
+          : loopState;
+        if (forkId && !agentLoopStates.has(forkId)) {
+          agentLoopStates.set(forkId, ls);
+        }
+        const loopResult = checkLoop(sdkMessage, ls);
+        if (loopResult) {
+          logger.chat.error(
+            "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
+            { fingerprint: loopResult.fingerprint, count: loopResult.count },
+          );
+          abortController!.abort();
+          const errorMessage = loopResult.fingerprint === "input_closed"
+            ? "CLI session ended unexpectedly. Please send a new message."
+            : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
+          if (!enqueue({
+            type: "error",
+            error: errorMessage,
+          })) break;
+          break;
+        }
+
+        logger.chat.debug("Qwen SDK Message: {sdkMessage}", { sdkMessage });
+
         if (!enqueue({
-          type: "error",
-          error: errorMessage,
+          type: "claude_json",
+          data: sdkMessage,
         })) break;
-        break;
       }
-
-      logger.chat.debug("Qwen SDK Message: {sdkMessage}", { sdkMessage });
-
-      if (!enqueue({
-        type: "claude_json",
-        data: sdkMessage,
-      })) break;
-    }
+    });
 
     if (!enqueue({ type: "done" })) return;
 
@@ -433,6 +465,11 @@ async function executeQwenCommand(
       },
     );
   } catch (error) {
+    if (abortController?.signal.aborted || isAbortLikeError(error)) {
+      enqueue({ type: "aborted" });
+      enqueue({ type: "done" });
+      return;
+    }
     logger.chat.error(
       "[DIAG] Chat request ERROR requestId={requestId} durationMs={durationMs} "
       + "messageCount={messageCount} error={error}",
@@ -450,12 +487,16 @@ async function executeQwenCommand(
     enqueue({ type: "done" });
   } finally {
     _activeChatCount--;
+    if (abortController && onAbort) {
+      abortController.signal.removeEventListener("abort", onAbort);
+    }
     // Ensure CLI subprocess is killed on any exit path (issue #84)
     const ac = requestAbortControllers.get(requestId);
     if (ac) {
       ac.abort();
       requestAbortControllers.delete(requestId);
     }
+    finalizeTrackedCliRequest(requestId);
     // Clean up session mapping so a new request can start for this session
     if (sessionId && activeSessions.get(sessionId) === requestId) {
       activeSessions.delete(sessionId);
