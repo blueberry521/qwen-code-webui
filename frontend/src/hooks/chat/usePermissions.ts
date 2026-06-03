@@ -131,9 +131,9 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   const loopDetectionConfigRef = useRef(DEFAULT_LOOP_DETECTION_CONFIG);
 
   // Auto-rejection loop detection state (SDK-level rejections, e.g. stdin closed)
-  // Map-based per-agent counter: key = agentId:toolName (or just toolName for main session)
+  // Track the most recent rejected tool per agent so switching tools resets the loop counter.
   const autoRejectionStatesRef = useRef<
-    Map<string, { count: number; lastTime: number }>
+    Map<string, { toolName: string; count: number; lastTime: number }>
   >(new Map());
 
   // Command result loop detection state
@@ -442,7 +442,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       const now = Date.now();
 
       // Build a scoped key for agent isolation
-      const scopeKey = agentId ? `${agentId}:${toolName}` : toolName;
+      const scopeKey = agentId || "__main__";
 
       // "Input closed" is a session-level fatal error — always detect immediately
       // Match the full SDK error format to avoid false positives from benign "Operation Cancelled"
@@ -454,7 +454,7 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       // When this occurs the CLI process is dead, so the entire session tree
       // (including all fork agents) is unusable regardless of which agent reported it.
       if (isInputClosed) {
-        autoRejectionStatesRef.current.delete(scopeKey);
+        autoRejectionStatesRef.current.clear();
         return {
           isOpen: true,
           toolName,
@@ -471,10 +471,13 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       // Get or create per-key state
       const states = autoRejectionStatesRef.current;
       const existing = states.get(scopeKey);
-      const state = existing && now - existing.lastTime <= config.resetWindowMs
-        ? existing
-        : { count: 0, lastTime: now };
+      const isWithinWindow = existing && now - existing.lastTime <= config.resetWindowMs;
+      const state =
+        isWithinWindow && existing.toolName === toolName
+          ? existing
+          : { toolName, count: 0, lastTime: now };
 
+      state.toolName = toolName;
       state.count++;
       state.lastTime = now;
       states.set(scopeKey, state);
