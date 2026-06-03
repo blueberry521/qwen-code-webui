@@ -2,19 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Context } from "hono";
 import { handleChatRequest } from "./chat";
 import type { ChatRequest } from "../../shared/types";
-import { query } from "@qwen-code/sdk";
+const mockQuery = vi.fn();
 
-// Define minimal mock types for Qwen Code SDK to maintain type safety in tests
-type MockQwenCode = {
-  query: typeof vi.fn;
-};
-
-vi.mock(
-  "@qwen-code/sdk",
-  (): MockQwenCode => ({
-    query: vi.fn(),
-  }),
-);
+vi.mock("../utils/qwenSdk.ts", () => ({
+  loadQwenQuery: vi.fn(async () => mockQuery),
+}));
 
 // Mock logger
 vi.mock("../utils/logger", () => ({
@@ -34,8 +26,6 @@ vi.mock("../utils/sessionBridge.ts", () => ({
     Promise.resolve(sessionId),
   ),
 }));
-
-const mockQuery = vi.mocked(query);
 
 describe("Chat Handler - Permission Mode Tests", () => {
   let mockContext: Context;
@@ -500,10 +490,7 @@ describe("Chat Handler - Permission Mode Tests", () => {
       expect(doneResponse).toEqual({ type: "done" });
     });
 
-    // TODO: Re-enable when AbortError is properly exported from Claude SDK
-    it.skip("should handle abort errors when using permissionMode", async () => {
-      // Test currently skipped because AbortError is not exported from Claude SDK
-      // When AbortError becomes available, update this test accordingly
+    it("should emit aborted messages when the SDK aborts", async () => {
       const chatRequest: ChatRequest = {
         message: "Abort test",
         requestId: "test-abort",
@@ -538,13 +525,12 @@ describe("Chat Handler - Permission Mode Tests", () => {
       }
 
       const lines = allChunks.trim().split("\n");
-      expect(lines).toHaveLength(1);
+      expect(lines).toHaveLength(2);
 
-      const errorResponse = JSON.parse(lines[0]);
-      expect(errorResponse).toEqual({
-        type: "error",
-        error: "Operation aborted",
-      });
+      const abortedResponse = JSON.parse(lines[0]);
+      const doneResponse = JSON.parse(lines[1]);
+      expect(abortedResponse).toEqual({ type: "aborted" });
+      expect(doneResponse).toEqual({ type: "done" });
     });
   });
 

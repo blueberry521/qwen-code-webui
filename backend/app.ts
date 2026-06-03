@@ -30,6 +30,7 @@ import {
 } from "./handlers/quota.ts";
 import { logger } from "./utils/logger.ts";
 import { readBinaryFile } from "./utils/fs.ts";
+import { abortAllTrackedCliRequests } from "./utils/cliProcessRegistry.ts";
 import { handleDeleteProjectRequest } from "./handlers/projects.ts";
 import {
   handleGitStatusRequest,
@@ -80,6 +81,7 @@ export function createApp(
     for (const [, ac] of requestAbortControllers) {
       ac.abort();
     }
+    abortAllTrackedCliRequests();
     requestAbortControllers.clear();
     for (const [, pending] of pendingPermissions) {
       pending.resolve({ behavior: "deny", message: "Server shutting down" });

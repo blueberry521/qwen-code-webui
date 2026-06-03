@@ -542,6 +542,38 @@ export function ChatPage() {
 
   // Ref to suppress error message when abort is triggered by /clear
   const clearAbortRef = useRef(false);
+  const activeFetchAbortControllerRef = useRef<AbortController | null>(null);
+  const activeLocalAbortReasonRef = useRef<"user" | "stall" | "system" | null>(null);
+
+  const abortLocalFetch = useCallback((reason: "user" | "stall" | "system") => {
+    activeLocalAbortReasonRef.current = reason;
+    const controller = activeFetchAbortControllerRef.current;
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+    }
+  }, []);
+
+  const abortLocalRequest = useCallback(
+    async (
+      requestId: string | null,
+      options: { resetState?: boolean; reason: "user" | "system" } = { reason: "user" },
+    ) => {
+      if (!requestId || !isLoading) return;
+
+      abortLocalFetch(options.reason);
+
+      try {
+        await abortRequest(requestId, true);
+      } catch (error) {
+        console.error("Failed to abort request:", error);
+      } finally {
+        if (options.resetState) {
+          resetRequestState();
+        }
+      }
+    },
+    [abortLocalFetch, abortRequest, isLoading, resetRequestState],
+  );
 
   // Show input notification when AI finishes responding (isLoading changes from true to false)
   useEffect(() => {
@@ -652,7 +684,13 @@ export function ChatPage() {
       // Stream stall detection: abort fetch if no data received for 120s.
       // Backend sends heartbeat every 15s, so 120s = 8 missed heartbeats.
       const fetchAbortController = new AbortController();
-      const stallDetector = createStallDetector(fetchAbortController);
+      activeFetchAbortControllerRef.current = fetchAbortController;
+      activeLocalAbortReasonRef.current = null;
+      const stallDetector = createStallDetector(fetchAbortController, undefined, () => {
+        if (activeFetchAbortControllerRef.current === fetchAbortController) {
+          activeLocalAbortReasonRef.current = "stall";
+        }
+      });
 
       try {
         const response = await fetch(getChatUrl(), {
@@ -712,6 +750,7 @@ export function ChatPage() {
           },
           onAbortRequest: async () => {
             shouldAbort = true;
+            abortLocalFetch("system");
             await createAbortHandler(requestId)();
           },
           // Auto-rejection loop detection
@@ -725,6 +764,7 @@ export function ChatPage() {
             shouldAbort = true;
             showCommandLoopRequest(request);
             // Auto-abort the request
+            abortLocalFetch("system");
             createAbortHandler(requestId)();
             // Clear sessionId on fatal session errors
             if (request.errorOutput?.toLowerCase().includes("input closed")) {
@@ -809,13 +849,15 @@ export function ChatPage() {
           error instanceof DOMException && error.name === "AbortError"
           && fetchAbortController.signal.aborted
         ) {
-          addMessage({
-            type: "chat",
-            role: "assistant",
-            content: t("chat.errorStreamStall"),
-            timestamp: Date.now(),
-          });
-          setCurrentSessionId(null);
+          if (activeLocalAbortReasonRef.current === "stall") {
+            addMessage({
+              type: "chat",
+              role: "assistant",
+              content: t("chat.errorStreamStall"),
+              timestamp: Date.now(),
+            });
+            setCurrentSessionId(null);
+          }
         } else if (!clearAbortRef.current) {
           console.error("Failed to send message:", error);
           const errorText = error instanceof Error
@@ -833,6 +875,10 @@ export function ChatPage() {
         }
       } finally {
         stallDetector.dispose();
+        if (activeFetchAbortControllerRef.current === fetchAbortController) {
+          activeFetchAbortControllerRef.current = null;
+          activeLocalAbortReasonRef.current = null;
+        }
 
         // Release the reader to free the HTTP connection.
         // Without this, the browser keeps connections open and eventually
@@ -888,6 +934,7 @@ export function ChatPage() {
       resetRequestState,
       processStreamLine,
       handlePermissionError,
+      abortLocalFetch,
       createAbortHandler,
       showInputNotification,
       isRemoteWorkspace,
@@ -897,12 +944,11 @@ export function ChatPage() {
 
   const handleAbort = useCallback(() => {
     if (isRemoteWorkspace && remoteChat.session) {
-      remoteChat.abortCurrentRequest();
-      resetRequestState();
+      void remoteChat.abortCurrentRequest();
       return;
     }
-    abortRequest(currentRequestId, isLoading, resetRequestState);
-  }, [abortRequest, currentRequestId, isLoading, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
+    void abortLocalRequest(currentRequestId, { reason: "user" });
+  }, [abortLocalRequest, currentRequestId, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
 
   // Slash command execution handler
   const handleExecuteSlashCommand = useCallback(
@@ -921,9 +967,9 @@ export function ChatPage() {
     // Abort any in-flight request to prevent stale messages
     clearAbortRef.current = true;
     if (isRemoteWorkspace && remoteChat.session) {
-      remoteChat.abortCurrentRequest();
+      void remoteChat.abortCurrentRequest();
     } else {
-      abortRequest(currentRequestId, isLoading, resetRequestState);
+      void abortLocalRequest(currentRequestId, { reason: "system", resetState: true });
     }
     resetRequestState();
     setMessages([]);
@@ -938,14 +984,14 @@ export function ChatPage() {
       content: t("slashCommands.contextCleared"),
       timestamp: Date.now(),
     });
-  }, [setMessages, setCurrentSessionId, setHasShownInitMessage, setHasReceivedInit, addMessage, t, navigate, abortRequest, currentRequestId, isLoading, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
+  }, [setMessages, setCurrentSessionId, setHasShownInitMessage, setHasReceivedInit, addMessage, t, navigate, abortLocalRequest, currentRequestId, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
 
   // Permission request handlers
   // Abort backend request when permission response HTTP POST fails,
   // preventing stuck canUseTool promises that block the stream forever.
   const handlePermissionAbort = useCallback(async () => {
-    await abortRequest(currentRequestId, isLoading, resetRequestState);
-  }, [abortRequest, currentRequestId, isLoading, resetRequestState]);
+    await abortLocalRequest(currentRequestId, { reason: "system" });
+  }, [abortLocalRequest, currentRequestId]);
 
   const handlePermissionAllow = useCallback(async () => {
     if (!permissionRequest) return;
@@ -1293,14 +1339,13 @@ export function ChatPage() {
     closeCommandLoopRequest();
     // Abort current request if loading
     if (isLoading && currentRequestId) {
-      abortRequest(currentRequestId, isLoading, resetRequestState);
+      void abortLocalRequest(currentRequestId, { reason: "system" });
     }
   }, [
+    abortLocalRequest,
     closeCommandLoopRequest,
     isLoading,
     currentRequestId,
-    abortRequest,
-    resetRequestState,
   ]);
 
   // Thinking timeout handler — abort and show notification
@@ -1320,7 +1365,7 @@ export function ChatPage() {
 
       // Abort the request
       if (isLoading && currentRequestId) {
-        abortRequest(currentRequestId, isLoading, resetRequestState);
+        void abortLocalRequest(currentRequestId, { reason: "system" });
         aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
         remoteChat.abortCurrentRequest();
@@ -1336,7 +1381,7 @@ export function ChatPage() {
         aborted,
       });
     },
-    [isLoading, currentRequestId, abortRequest, resetRequestState, isRemoteWorkspace, remoteChat],
+    [abortLocalRequest, isLoading, currentRequestId, resetRequestState, isRemoteWorkspace, remoteChat],
   );
   thinkingTimeoutRef.current = handleThinkingTimeout;
 
