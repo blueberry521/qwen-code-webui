@@ -59,6 +59,7 @@
   },
   "chat": {
     "processing": "Processing...",
+    "stopping": "Stopping...",
     "typeMessage": "Type message...",
     "send": "Send",
     "plan": "Plan",

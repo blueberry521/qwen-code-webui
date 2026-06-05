@@ -14,6 +14,7 @@ export interface StallDetector {
 export function createStallDetector(
   abortController: AbortController,
   timeoutMs: number = 120_000,
+  onAbort?: () => void,
 ): StallDetector {
   let stallTimerId: ReturnType<typeof setTimeout> | null = null;
   let lastDataTime = Date.now();
@@ -37,6 +38,7 @@ export function createStallDetector(
       return;
     }
     console.warn(`[Stream stall] No data for ${timeoutMs / 1000}s, aborting fetch`);
+    onAbort?.();
     abortController.abort();
   };
 

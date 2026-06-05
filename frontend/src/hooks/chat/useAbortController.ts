@@ -4,28 +4,30 @@ import { getAbortUrl, getPermissionRespondUrl } from "../../config/api";
 export function useAbortController() {
   // Helper function to perform abort request
   const performAbortRequest = useCallback(async (requestId: string) => {
-    await fetch(getAbortUrl(requestId), {
+    const response = await fetch(getAbortUrl(requestId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
+
+    if (response.status === 404) {
+      return response;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to abort request: ${response.status} ${response.statusText}`);
+    }
+
+    return response;
   }, []);
 
   const abortRequest = useCallback(
     async (
       requestId: string | null,
       isLoading: boolean,
-      onAbortComplete: () => void,
     ) => {
       if (!requestId || !isLoading) return;
 
-      try {
-        await performAbortRequest(requestId);
-      } catch (error) {
-        console.error("Failed to abort request:", error);
-      } finally {
-        // Clean up state after successful abort or error
-        onAbortComplete();
-      }
+      return performAbortRequest(requestId);
     },
     [performAbortRequest],
   );

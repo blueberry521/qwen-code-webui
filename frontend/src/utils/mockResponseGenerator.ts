@@ -3,11 +3,22 @@ import { generateToolPattern } from "./toolUtils";
 import { generateId } from "./id";
 import { TOOL_NAMES } from "./toolNames";
 
-export interface MockStreamResponse {
-  type: "claude_json" | "done" | "error";
-  data?: SDKMessage;
-  error?: string;
-}
+export type MockStreamResponse =
+  | {
+      type: "claude_json";
+      data: SDKMessage;
+    }
+  | {
+      type: "permission_request";
+      data: { toolName: string; pattern: string; toolUseId: string };
+    }
+  | {
+      type: "done";
+    }
+  | {
+      type: "error";
+      error: string;
+    };
 
 export interface ButtonActionData {
   buttonType:
@@ -26,7 +37,7 @@ export type MockScenarioStep =
       data: SDKMessage;
     }
   | {
-      type: "permission_error";
+      type: "permission_request";
       delay: number;
       data: { toolName: string; pattern: string; toolUseId: string };
     }
@@ -202,30 +213,6 @@ export function createExitPlanModeToolUseWithId(
   };
 }
 
-// Generate ExitPlanMode tool result message
-export function createExitPlanModeToolResult(
-  sessionId: string,
-  toolUseId: string,
-): Extract<SDKMessage, { type: "user" }> {
-  return {
-    type: "user",
-    message: {
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          tool_use_id: toolUseId,
-          content: "Exit plan mode?",
-          is_error: true, // Mark as error to trigger permission dialog
-        },
-      ],
-    },
-    parent_tool_use_id: null,
-    session_id: sessionId,
-    uuid: generateId(),
-  };
-}
-
 // Generate realistic tool use assistant messages
 export function createToolUseMessage(
   toolName: string,
@@ -262,16 +249,15 @@ export function* generateMockStream(
   steps: MockScenarioStep[],
 ): Generator<MockStreamResponse, void, unknown> {
   for (const step of steps) {
-    if (step.type === "permission_error") {
-      // This would trigger permission request in real app
-      const errorData = step.data as {
+    if (step.type === "permission_request") {
+      const requestData = step.data as {
         toolName: string;
         pattern: string;
         toolUseId: string;
       };
       yield {
-        type: "error",
-        error: `Permission required for tool: ${errorData.toolName}`,
+        type: "permission_request",
+        data: requestData,
       };
       continue;
     }
@@ -344,7 +330,7 @@ export const DEMO_SCENARIOS = {
         ),
       },
       {
-        type: "permission_error" as const,
+        type: "permission_request" as const,
         delay: 1000,
         data: {
           toolName: TOOL_NAMES.READ,
@@ -404,7 +390,7 @@ export const DEMO_SCENARIOS = {
         ),
       },
       {
-        type: "permission_error" as const,
+        type: "permission_request" as const,
         delay: 900,
         data: {
           toolName: TOOL_NAMES.BASH,
@@ -500,7 +486,7 @@ if __name__ == "__main__":
         ),
       },
       {
-        type: "permission_error" as const,
+        type: "permission_request" as const,
         delay: 1000,
         data: {
           toolName: TOOL_NAMES.WRITE,
@@ -551,7 +537,7 @@ if __name__ == "__main__":
         ),
       },
       {
-        type: "permission_error" as const,
+        type: "permission_request" as const,
         delay: 800,
         data: {
           toolName: TOOL_NAMES.BASH,
@@ -631,12 +617,13 @@ I'll create a comprehensive README.md file for the Qwen Code Web UI project with
           ),
         },
         {
-          type: "user" as const,
+          type: "permission_request" as const,
           delay: 1500,
-          data: createExitPlanModeToolResult(
-            "demo-session-plan",
-            planToolUseId,
-          ),
+          data: {
+            toolName: TOOL_NAMES.EXIT_PLAN_MODE,
+            pattern: TOOL_NAMES.EXIT_PLAN_MODE,
+            toolUseId: planToolUseId,
+          },
         },
         {
           type: "button_focus",

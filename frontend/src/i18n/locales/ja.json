@@ -59,6 +59,7 @@
   },
   "chat": {
     "processing": "処理中...",
+    "stopping": "停止中...",
     "typeMessage": "メッセージを入力...",
     "send": "送信",
     "plan": "プラン",

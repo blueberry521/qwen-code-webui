@@ -29,12 +29,6 @@ export interface StreamingContext {
   onInitMessageShown?: () => void;
   hasReceivedInit?: boolean;
   setHasReceivedInit?: (received: boolean) => void;
-  onPermissionError?: (
-    toolName: string,
-    patterns: string[],
-    toolUseId: string,
-    requestId?: string,
-  ) => void;
   onAbortRequest?: () => void;
   // Auto-rejection loop detection (SDK-level rejections, e.g. stdin closed)
   onAutoRejection?: (

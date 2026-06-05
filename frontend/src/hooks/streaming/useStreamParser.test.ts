@@ -304,6 +304,72 @@ describe("useStreamParser", () => {
     });
   });
 
+  describe("Permission Request Handling", () => {
+    it("should forward proactive permission requests to onPermissionRequest", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "permission_request",
+          permissionId: "perm-123",
+          toolName: TOOL_NAMES.BASH,
+          toolInput: { command: "ls -la" },
+          suggestions: [
+            {
+              type: "allow",
+              label: "Allow ls",
+              description: "Allow this command",
+            },
+          ],
+          autoApproveMs: 25000,
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).toHaveBeenCalledWith({
+        permissionId: "perm-123",
+        toolName: TOOL_NAMES.BASH,
+        toolInput: { command: "ls -la" },
+        suggestions: [
+          {
+            type: "allow",
+            label: "Allow ls",
+            description: "Allow this command",
+          },
+        ],
+        autoApproveMs: 25000,
+        confirmationType: undefined,
+        questions: undefined,
+      });
+    });
+
+    it("should ignore invalid proactive permission requests", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "permission_request",
+          toolInput: { command: "ls -la" },
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Invalid permission_request: missing permissionId or toolName",
+      );
+
+      warnSpy.mockRestore();
+    });
+  });
+
   describe("Stream Line Processing and Error Handling", () => {
     it("should handle malformed JSON gracefully", () => {
       const { result } = renderHook(() => useStreamParser());

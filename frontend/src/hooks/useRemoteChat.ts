@@ -37,11 +37,19 @@ export interface RemoteChatOptions {
   onQuotaExceeded?: (quotaStatus: unknown) => void;
 }
 
+type RemoteRequestStateEvent = {
+  type: "aborted" | "abort_failed";
+  reason?: string;
+  message?: string;
+};
+
 export function useRemoteChat(options?: RemoteChatOptions) {
   const [session, setSession] = useState<RemoteSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const abortAckTimerRef = useRef<number | null>(null);
   const sendingRef = useRef(false);
   const { t } = useTranslation();
 
@@ -57,6 +65,13 @@ export function useRemoteChat(options?: RemoteChatOptions) {
     }
     if (opts?.streamingContext?.setCurrentAssistantMessage) {
       opts.streamingContext.setCurrentAssistantMessage(null);
+    }
+  }, []);
+
+  const clearAbortAckTimer = useCallback(() => {
+    if (abortAckTimerRef.current !== null) {
+      window.clearTimeout(abortAckTimerRef.current);
+      abortAckTimerRef.current = null;
     }
   }, []);
 
@@ -77,13 +92,34 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         return; // Don't forward to onStreamLine
       }
 
+      if (parsed.type === "request_state" && parsed.data) {
+        const requestState = parsed.data as RemoteRequestStateEvent;
+        if (requestState.type === "aborted") {
+          clearAbortAckTimer();
+          setIsStopping(false);
+          setIsLoading(false);
+          clearStreamingState();
+          return;
+        }
+        if (requestState.type === "abort_failed") {
+          clearAbortAckTimer();
+          setIsStopping(false);
+          setError(requestState.message || "Failed to stop remote request");
+          return;
+        }
+      }
+
       // Detect result events to clear loading state
       if (parsed.type === "claude_json" && parsed.data?.type === "result") {
+        clearAbortAckTimer();
+        setIsStopping(false);
         setIsLoading(false);
       }
 
       // Handle error events from the remote agent (e.g. CLI crash, send failure)
       if (parsed.type === "error") {
+        clearAbortAckTimer();
+        setIsStopping(false);
         setIsLoading(false);
         setError(parsed.data || "Unknown remote error");
         return; // Don't forward to onStreamLine
@@ -95,7 +131,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
     if (opts?.onStreamLine && opts.streamingContext) {
       opts.onStreamLine(line, opts.streamingContext);
     }
-  }, []);
+  }, [clearAbortAckTimer, clearStreamingState]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -104,8 +140,9 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      clearAbortAckTimer();
     };
-  }, []);
+  }, [clearAbortAckTimer]);
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -121,6 +158,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
       haPoolToken?: string
     ) => {
       setIsLoading(true);
+      clearAbortAckTimer();
+      setIsStopping(false);
       setError(null);
       setSession(null);
 
@@ -148,6 +187,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             (err) => {
               console.error("[useRemoteChat] SSE error:", err);
               setError(t("chat.remoteDisconnected"));
+              clearAbortAckTimer();
+              setIsStopping(false);
               setIsLoading(false);
               clearStreamingState();
               setSession((prev) =>
@@ -156,6 +197,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             },
             () => {
               console.log("[useRemoteChat] SSE done");
+              clearAbortAckTimer();
+              setIsStopping(false);
               setIsLoading(false);
               clearStreamingState();
               // If the session was active and SSE closed, it likely means
@@ -199,6 +242,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
       if (session) return; // already connected
 
       setIsLoading(true);
+      clearAbortAckTimer();
+      setIsStopping(false);
       setError(null);
 
       try {
@@ -275,6 +320,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             (err) => {
               console.error("[useRemoteChat] SSE error:", err);
               setError(t("chat.remoteReconnectFailed"));
+              clearAbortAckTimer();
+              setIsStopping(false);
               setIsLoading(false);
               clearStreamingState();
               setSession((prev) =>
@@ -283,6 +330,8 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             },
             () => {
               console.log("[useRemoteChat] SSE done");
+              clearAbortAckTimer();
+              setIsStopping(false);
               setIsLoading(false);
               clearStreamingState();
             },
@@ -310,6 +359,9 @@ export function useRemoteChat(options?: RemoteChatOptions) {
       // Prevent double-sends
       if (sendingRef.current) return;
       sendingRef.current = true;
+      clearAbortAckTimer();
+      setIsStopping(false);
+      setError(null);
       setIsLoading(true);
 
       try {
@@ -330,19 +382,28 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         sendingRef.current = false;
       }
     },
-    [session]
+    [clearAbortAckTimer, session]
   );
 
-  const abortCurrentRequest = useCallback(async () => {
-    if (!session) return;
+  const abortCurrentRequest = useCallback(async (reason = "user") => {
+    if (!session || isStopping) return;
     try {
-      await abortRemoteRequest(session.session_id);
-      setIsLoading(false);
-      clearStreamingState();
+      setIsStopping(true);
+      setError(null);
+      await abortRemoteRequest(session.session_id, reason);
+      abortAckTimerRef.current = window.setTimeout(() => {
+        setIsStopping(false);
+        setError("Remote stop was not confirmed");
+      }, 5000);
     } catch (err) {
+      clearAbortAckTimer();
+      setIsStopping(false);
       console.error("[useRemoteChat] Failed to abort request:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to abort remote request"
+      );
     }
-  }, [session, clearStreamingState]);
+  }, [clearAbortAckTimer, isStopping, session]);
 
   const stopSessionHandler = useCallback(async () => {
     if (!session) return;
@@ -355,13 +416,16 @@ export function useRemoteChat(options?: RemoteChatOptions) {
 
     try {
       await stopRemoteSession(session.session_id);
+      clearAbortAckTimer();
+      setIsStopping(false);
+      setIsLoading(false);
       setSession((prev) => (prev ? { ...prev, status: "stopped" } : null));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to stop remote session"
       );
     }
-  }, [session]);
+  }, [clearAbortAckTimer, session]);
 
   const resetSession = useCallback(async () => {
     if (session) {
@@ -375,10 +439,12 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         console.error("[useRemoteChat] Failed to stop session during reset:", err);
       }
     }
+    clearAbortAckTimer();
     setSession(null);
     setError(null);
+    setIsStopping(false);
     setIsLoading(false);
-  }, [session]);
+  }, [clearAbortAckTimer, session]);
 
   const reconnect = useCallback(
     async (machineId: string, projectPath: string, model?: string) => {
@@ -452,6 +518,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
   return {
     session,
     isLoading,
+    isStopping,
     sendMessage,
     startSession,
     connectSession,

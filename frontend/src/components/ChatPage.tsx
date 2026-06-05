@@ -334,7 +334,7 @@ export function ChatPage() {
               notificationTriggeredRef.current = true;
               commandLoopShowRef.current?.(request);
               // Auto-abort the remote request
-              remoteChat.abortCurrentRequest();
+              remoteChat.abortCurrentRequest("system");
               // Clear sessionId on fatal session errors
               if (request.errorOutput?.toLowerCase().includes("input closed")) {
                 setCurrentSessionId(null);
@@ -356,11 +356,33 @@ export function ChatPage() {
             },
           },
           onPermissionRequest: (event) => {
-            // Forward remote CLI permission request to the existing permission panel
             const req = event.request;
             if (req?.tool_name) {
-              const patterns = req.permission_suggestions?.map(s => s.rule) || [];
-              permissionErrorRef.current?.(req.tool_name, patterns, req.tool_use_id || "", event.request_id);
+              const toolInput = req.input || {};
+              const { toolName: extractedName, commands } = extractToolInfo(
+                req.tool_name,
+                toolInput,
+              );
+              const patterns =
+                req.permission_suggestions?.map((suggestion) => suggestion.rule) ||
+                generateToolPatterns(extractedName, commands);
+
+              notificationTriggeredRef.current = true;
+              if (patterns.includes(TOOL_NAMES.EXIT_PLAN_MODE)) {
+                showPlanModeRequest("");
+                showPlanNotification();
+                return;
+              }
+
+              showPermissionRequest(
+                extractedName,
+                patterns,
+                req.tool_use_id || "",
+                event.request_id,
+                undefined,
+                toolInput,
+              );
+              showPermissionNotification();
             }
           },
           onQuotaExceeded: (quotaStatus) => {
@@ -526,13 +548,7 @@ export function ChatPage() {
   // during the current streaming session (used to decide if input notification should fire)
   const notificationTriggeredRef = useRef(false);
 
-  // Ref for permission error handler — used by remote streamingContext to
-  // avoid declaration-order issues (handlePermissionError is defined below).
-  const permissionErrorRef = useRef<
-    ((toolName: string, patterns: string[], toolUseId: string, requestId?: string) => void) | null
-  >(null);
-
-  // Ref for thinking timeout handler — same pattern as permissionErrorRef
+  // Ref for thinking timeout handler
   const thinkingTimeoutRef = useRef<
     ((accumulatedContent: string, info: ThinkingTimeoutContext) => void) | null
   >(null);
@@ -542,6 +558,38 @@ export function ChatPage() {
 
   // Ref to suppress error message when abort is triggered by /clear
   const clearAbortRef = useRef(false);
+  const activeFetchAbortControllerRef = useRef<AbortController | null>(null);
+  const activeLocalAbortReasonRef = useRef<"user" | "stall" | "system" | null>(null);
+
+  const abortLocalFetch = useCallback((reason: "user" | "stall" | "system") => {
+    activeLocalAbortReasonRef.current = reason;
+    const controller = activeFetchAbortControllerRef.current;
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+    }
+  }, []);
+
+  const abortLocalRequest = useCallback(
+    async (
+      requestId: string | null,
+      options: { resetState?: boolean; reason: "user" | "system" } = { reason: "user" },
+    ) => {
+      if (!requestId || !isLoading) return;
+
+      abortLocalFetch(options.reason);
+
+      try {
+        await abortRequest(requestId, true);
+      } catch (error) {
+        console.error("Failed to abort request:", error);
+      } finally {
+        if (options.resetState) {
+          resetRequestState();
+        }
+      }
+    },
+    [abortLocalFetch, abortRequest, isLoading, resetRequestState],
+  );
 
   // Show input notification when AI finishes responding (isLoading changes from true to false)
   useEffect(() => {
@@ -564,25 +612,6 @@ export function ChatPage() {
       notificationTriggeredRef.current = false;
     }
   }, [effectiveIsLoading, showInputNotification]);
-
-  const handlePermissionError = useCallback(
-    (toolName: string, patterns: string[], toolUseId: string, requestId?: string) => {
-      notificationTriggeredRef.current = true;
-      // Check if this is an ExitPlanMode permission error
-      if (patterns.includes(TOOL_NAMES.EXIT_PLAN_MODE)) {
-        // For ExitPlanMode, show plan permission interface instead of regular permission
-        showPlanModeRequest(""); // Empty plan content since it was already displayed
-        // Show tab notification for plan approval
-        showPlanNotification();
-      } else {
-        showPermissionRequest(toolName, patterns, toolUseId, requestId);
-        // Show tab notification for permission request
-        showPermissionNotification();
-      }
-    },
-    [showPermissionRequest, showPlanModeRequest, showPermissionNotification, showPlanNotification],
-  );
-  permissionErrorRef.current = handlePermissionError;
 
   const sendMessage = useCallback(
     async (
@@ -652,7 +681,13 @@ export function ChatPage() {
       // Stream stall detection: abort fetch if no data received for 120s.
       // Backend sends heartbeat every 15s, so 120s = 8 missed heartbeats.
       const fetchAbortController = new AbortController();
-      const stallDetector = createStallDetector(fetchAbortController);
+      activeFetchAbortControllerRef.current = fetchAbortController;
+      activeLocalAbortReasonRef.current = null;
+      const stallDetector = createStallDetector(fetchAbortController, undefined, () => {
+        if (activeFetchAbortControllerRef.current === fetchAbortController) {
+          activeLocalAbortReasonRef.current = "stall";
+        }
+      });
 
       try {
         const response = await fetch(getChatUrl(), {
@@ -712,6 +747,7 @@ export function ChatPage() {
           },
           onAbortRequest: async () => {
             shouldAbort = true;
+            abortLocalFetch("system");
             await createAbortHandler(requestId)();
           },
           // Auto-rejection loop detection
@@ -725,6 +761,7 @@ export function ChatPage() {
             shouldAbort = true;
             showCommandLoopRequest(request);
             // Auto-abort the request
+            abortLocalFetch("system");
             createAbortHandler(requestId)();
             // Clear sessionId on fatal session errors
             if (request.errorOutput?.toLowerCase().includes("input closed")) {
@@ -809,13 +846,15 @@ export function ChatPage() {
           error instanceof DOMException && error.name === "AbortError"
           && fetchAbortController.signal.aborted
         ) {
-          addMessage({
-            type: "chat",
-            role: "assistant",
-            content: t("chat.errorStreamStall"),
-            timestamp: Date.now(),
-          });
-          setCurrentSessionId(null);
+          if (activeLocalAbortReasonRef.current === "stall") {
+            addMessage({
+              type: "chat",
+              role: "assistant",
+              content: t("chat.errorStreamStall"),
+              timestamp: Date.now(),
+            });
+            setCurrentSessionId(null);
+          }
         } else if (!clearAbortRef.current) {
           console.error("Failed to send message:", error);
           const errorText = error instanceof Error
@@ -833,6 +872,10 @@ export function ChatPage() {
         }
       } finally {
         stallDetector.dispose();
+        if (activeFetchAbortControllerRef.current === fetchAbortController) {
+          activeFetchAbortControllerRef.current = null;
+          activeLocalAbortReasonRef.current = null;
+        }
 
         // Release the reader to free the HTTP connection.
         // Without this, the browser keeps connections open and eventually
@@ -887,7 +930,7 @@ export function ChatPage() {
       setCurrentAssistantMessage,
       resetRequestState,
       processStreamLine,
-      handlePermissionError,
+      abortLocalFetch,
       createAbortHandler,
       showInputNotification,
       isRemoteWorkspace,
@@ -897,12 +940,11 @@ export function ChatPage() {
 
   const handleAbort = useCallback(() => {
     if (isRemoteWorkspace && remoteChat.session) {
-      remoteChat.abortCurrentRequest();
-      resetRequestState();
+      void remoteChat.abortCurrentRequest("user");
       return;
     }
-    abortRequest(currentRequestId, isLoading, resetRequestState);
-  }, [abortRequest, currentRequestId, isLoading, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
+    void abortLocalRequest(currentRequestId, { reason: "user" });
+  }, [abortLocalRequest, currentRequestId, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
 
   // Slash command execution handler
   const handleExecuteSlashCommand = useCallback(
@@ -921,9 +963,9 @@ export function ChatPage() {
     // Abort any in-flight request to prevent stale messages
     clearAbortRef.current = true;
     if (isRemoteWorkspace && remoteChat.session) {
-      remoteChat.abortCurrentRequest();
+      void remoteChat.abortCurrentRequest("system");
     } else {
-      abortRequest(currentRequestId, isLoading, resetRequestState);
+      void abortLocalRequest(currentRequestId, { reason: "system", resetState: true });
     }
     resetRequestState();
     setMessages([]);
@@ -938,14 +980,14 @@ export function ChatPage() {
       content: t("slashCommands.contextCleared"),
       timestamp: Date.now(),
     });
-  }, [setMessages, setCurrentSessionId, setHasShownInitMessage, setHasReceivedInit, addMessage, t, navigate, abortRequest, currentRequestId, isLoading, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
+  }, [setMessages, setCurrentSessionId, setHasShownInitMessage, setHasReceivedInit, addMessage, t, navigate, abortLocalRequest, currentRequestId, resetRequestState, isRemoteWorkspace, remoteChat.abortCurrentRequest, remoteChat.session]);
 
   // Permission request handlers
   // Abort backend request when permission response HTTP POST fails,
   // preventing stuck canUseTool promises that block the stream forever.
   const handlePermissionAbort = useCallback(async () => {
-    await abortRequest(currentRequestId, isLoading, resetRequestState);
-  }, [abortRequest, currentRequestId, isLoading, resetRequestState]);
+    await abortLocalRequest(currentRequestId, { reason: "system" });
+  }, [abortLocalRequest, currentRequestId]);
 
   const handlePermissionAllow = useCallback(async () => {
     if (!permissionRequest) return;
@@ -995,23 +1037,11 @@ export function ChatPage() {
       return;
     }
 
-    // Legacy reactive flow — abort + new request with expanded allowedTools
-    let updatedAllowedTools = allowedTools;
-    permissionRequest.patterns.forEach((pattern) => {
-      updatedAllowedTools = allowToolTemporary(pattern, updatedAllowedTools);
-    });
-
     closePermissionRequest();
-
-    if (currentSessionId) {
-      sendMessage("continue", updatedAllowedTools, true);
-    }
   }, [
     permissionRequest,
-    currentSessionId,
-    sendMessage,
     allowedTools,
-    allowToolTemporary,
+    allowToolPermanent,
     closePermissionRequest,
     resetDenialCounter,
     clearNotification,
@@ -1065,22 +1095,9 @@ export function ChatPage() {
       return;
     }
 
-    // Legacy reactive flow
-    // Accumulate all patterns into a single update to avoid React batching race
-    let updatedAllowedTools = allowedTools;
-    permissionRequest.patterns.forEach((pattern) => {
-      updatedAllowedTools = allowToolPermanent(pattern, updatedAllowedTools);
-    });
-
     closePermissionRequest();
-
-    if (currentSessionId) {
-      sendMessage("continue", updatedAllowedTools, true);
-    }
   }, [
     permissionRequest,
-    currentSessionId,
-    sendMessage,
     allowedTools,
     allowToolPermanent,
     closePermissionRequest,
@@ -1098,36 +1115,30 @@ export function ChatPage() {
     resetDenialCounter();
     clearNotification();
 
-    if (permissionRequest.permissionId) {
-      // Persist bare tool name so ALL run_shell_command calls are auto-approved
-      allowToolPermanent(permissionRequest.toolName, allowedTools);
-      try {
-        const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
-          updatedInput: permissionRequest.toolInput || {},
-          scope: "all",
-        });
-        if (!resp.ok) {
-          console.warn("Permission response failed:", resp.status);
-          await handlePermissionAbort();
-        }
-      } catch (error) {
-        console.error("Failed to send permission response:", error);
-        await handlePermissionAbort();
-      }
+    // Defensive guard: the UI only renders "allow all" for proactive requests.
+    if (!permissionRequest.permissionId) {
       closePermissionRequest();
       return;
     }
 
-    // Legacy reactive flow
-    const updatedAllowedTools = allowToolPermanent(permissionRequest.toolName, allowedTools);
-    closePermissionRequest();
-    if (currentSessionId) {
-      sendMessage("continue", updatedAllowedTools, true);
+    // Persist bare tool name so ALL run_shell_command calls are auto-approved
+    allowToolPermanent(permissionRequest.toolName, allowedTools);
+    try {
+      const resp = await sendPermissionResponse(permissionRequest.permissionId, "allow", {
+        updatedInput: permissionRequest.toolInput || {},
+        scope: "all",
+      });
+      if (!resp.ok) {
+        console.warn("Permission response failed:", resp.status);
+        await handlePermissionAbort();
+      }
+    } catch (error) {
+      console.error("Failed to send permission response:", error);
+      await handlePermissionAbort();
     }
+    closePermissionRequest();
   }, [
     permissionRequest,
-    currentSessionId,
-    sendMessage,
     allowedTools,
     allowToolPermanent,
     closePermissionRequest,
@@ -1180,25 +1191,9 @@ export function ChatPage() {
       return;
     }
 
-    // Legacy reactive flow
     closePermissionRequest();
-
-    if (currentSessionId) {
-      if (loopMessage) {
-        sendMessage(loopMessage, allowedTools, true);
-      } else {
-        sendMessage(
-          `The user denied the permission request for ${toolName}. Please stop retrying and ask the user what they would like to do instead.`,
-          allowedTools,
-          true
-        );
-      }
-    }
   }, [
     permissionRequest,
-    currentSessionId,
-    sendMessage,
-    allowedTools,
     closePermissionRequest,
     recordDenial,
     clearNotification,
@@ -1293,14 +1288,13 @@ export function ChatPage() {
     closeCommandLoopRequest();
     // Abort current request if loading
     if (isLoading && currentRequestId) {
-      abortRequest(currentRequestId, isLoading, resetRequestState);
+      void abortLocalRequest(currentRequestId, { reason: "system" });
     }
   }, [
+    abortLocalRequest,
     closeCommandLoopRequest,
     isLoading,
     currentRequestId,
-    abortRequest,
-    resetRequestState,
   ]);
 
   // Thinking timeout handler — abort and show notification
@@ -1320,11 +1314,10 @@ export function ChatPage() {
 
       // Abort the request
       if (isLoading && currentRequestId) {
-        abortRequest(currentRequestId, isLoading, resetRequestState);
+        void abortLocalRequest(currentRequestId, { reason: "system" });
         aborted = true;
       } else if (isRemoteWorkspace && remoteChat.session) {
-        remoteChat.abortCurrentRequest();
-        resetRequestState();
+        remoteChat.abortCurrentRequest("timeout");
         aborted = true;
       }
 
@@ -1336,7 +1329,7 @@ export function ChatPage() {
         aborted,
       });
     },
-    [isLoading, currentRequestId, abortRequest, resetRequestState, isRemoteWorkspace, remoteChat],
+    [abortLocalRequest, isLoading, currentRequestId, isRemoteWorkspace, remoteChat],
   );
   thinkingTimeoutRef.current = handleThinkingTimeout;
 
@@ -1348,7 +1341,9 @@ export function ChatPage() {
         toolInput: permissionRequest.toolInput,
         onAllow: handlePermissionAllow,
         onAllowPermanent: handlePermissionAllowPermanent,
-        onAllowAll: handlePermissionAllowAll,
+        onAllowAll: permissionRequest.permissionId
+          ? handlePermissionAllowAll
+          : undefined,
         onDeny: handlePermissionDeny,
         autoApproveMs: permissionRequest.autoApproveMs,
       }
@@ -1847,6 +1842,7 @@ export function ChatPage() {
               <ChatInput
                 input={input}
                 isLoading={effectiveIsLoading}
+                isStopping={isRemoteWorkspace && remoteChat.isStopping}
                 currentRequestId={currentRequestId}
                 onInputChange={setInput}
                 onSubmit={() => sendMessage()}
