@@ -1,6 +1,7 @@
 import { Context } from "hono";
 import type { PermissionMode, AuthType, PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
+import { existsSync, mkdirSync } from "node:fs";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
 import { bridgeSession } from "../utils/sessionBridge.ts";
@@ -161,6 +162,23 @@ async function executeQwenCommand(
       "Executing Qwen query with permissionMode: {permissionMode} (mapped: {mappedPermissionMode})",
       { permissionMode, mappedPermissionMode },
     );
+
+    // Validate and ensure workingDirectory exists before passing to SDK
+    // This prevents spawn ENOENT errors when cwd directory doesn't exist
+    if (workingDirectory) {
+      if (!existsSync(workingDirectory)) {
+        try {
+          mkdirSync(workingDirectory, { recursive: true });
+          logger.chat.info("Created workingDirectory: {path}", { path: workingDirectory });
+        } catch (e) {
+          logger.chat.warn(
+            "Cannot create workingDirectory: {path}, falling back to default cwd. Error: {error}",
+            { path: workingDirectory, error: e instanceof Error ? e.message : String(e) },
+          );
+          workingDirectory = undefined;
+        }
+      }
+    }
 
     _activeChatCount++;
     logger.chat.info(
