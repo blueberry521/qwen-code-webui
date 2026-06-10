@@ -20,6 +20,11 @@ vi.mock("../utils/logger", () => ({
   },
 }));
 
+// Mock node:fs for workingDirectory validation
+vi.mock("node:fs", () => ({
+  mkdirSync: vi.fn(),
+}));
+
 // Mock sessionBridge to pass through sessionId unchanged
 vi.mock("../utils/sessionBridge.ts", () => ({
   bridgeSession: vi.fn((_cwd: string, sessionId: string | undefined) =>

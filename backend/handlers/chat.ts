@@ -1,7 +1,7 @@
 import { Context } from "hono";
 import type { PermissionMode, AuthType, PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { logger } from "../utils/logger.ts";
 import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
 import { bridgeSession } from "../utils/sessionBridge.ts";
@@ -163,14 +163,15 @@ async function executeQwenCommand(
       { permissionMode, mappedPermissionMode },
     );
 
-    // Validate and ensure workingDirectory exists before passing to SDK
+    // Ensure workingDirectory exists before passing to SDK
     // This prevents spawn ENOENT errors when cwd directory doesn't exist
+    // Direct mkdirSync avoids TOCTOU race condition vs existsSync + mkdirSync
     if (workingDirectory) {
-      if (!existsSync(workingDirectory)) {
-        try {
-          mkdirSync(workingDirectory, { recursive: true });
-          logger.chat.info("Created workingDirectory: {path}", { path: workingDirectory });
-        } catch (e) {
+      try {
+        mkdirSync(workingDirectory, { recursive: true });
+      } catch (e) {
+        // EEXIST means directory already exists - that's fine, continue normally
+        if (!(e instanceof Error && "code" in e && e.code === "EEXIST")) {
           logger.chat.warn(
             "Cannot create workingDirectory: {path}, falling back to default cwd. Error: {error}",
             { path: workingDirectory, error: e instanceof Error ? e.message : String(e) },
