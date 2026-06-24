@@ -7,7 +7,7 @@
  * Note: Todo messages are handled by ChatViewer using UpdatedPlanToolCall
  */
 
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChatViewer,
@@ -28,17 +28,22 @@ interface WebUIChatMessagesProps {
   className?: string;
 }
 
+export interface WebUIChatMessagesHandle {
+  scrollToBottom: () => void;
+}
+
 /**
  * WebUI-based chat messages display component
  *
  * Uses @qwen-code/webui ChatViewer for standard message types,
  * with custom rendering for extended types (plan, system, etc.)
  */
-export function WebUIChatMessages({
-  messages,
-  expandThinking,
-  className,
-}: WebUIChatMessagesProps) {
+export const WebUIChatMessages = forwardRef<WebUIChatMessagesHandle, WebUIChatMessagesProps>(
+  function WebUIChatMessages({
+    messages,
+    expandThinking,
+    className,
+  }, ref) {
   const chatViewerRef = useRef<ChatViewerHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -56,6 +61,19 @@ export function WebUIChatMessages({
       return extType !== "system" && extType !== "result" && extType !== "error";
     });
   }, [adaptedMessages]);
+
+  // Scroll to bottom function
+  const scrollToBottom = () => {
+    if (chatViewerRef.current) {
+      chatViewerRef.current.scrollToBottom("smooth");
+    }
+    shouldAutoScroll.current = true;
+  };
+
+  // Expose scrollToBottom to parent via ref
+  useImperativeHandle(ref, () => ({
+    scrollToBottom,
+  }), []);
 
   // Track whether user has scrolled away from bottom
   useEffect(() => {
@@ -137,7 +155,8 @@ export function WebUIChatMessages({
       )}
     </div>
   );
-}
+  }
+);
 
 /**
  * Empty state component
@@ -160,5 +179,3 @@ function EmptyState() {
     </div>
   );
 }
-
-export default WebUIChatMessages;

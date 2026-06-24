@@ -36,8 +36,8 @@ import { ExpandThinkingButton } from "./chat/ExpandThinkingButton";
 import { ToggleWebUIComponentsButton } from "./chat/ToggleWebUIComponentsButton";
 import { ModelSelector } from "./chat/ModelSelector";
 import { ChatInput } from "./chat/ChatInput";
-import { ChatMessages } from "./chat/ChatMessages";
-import { WebUIChatMessages } from "./chat/WebUIChatMessages";
+import { ChatMessages, type ChatMessagesHandle } from "./chat/ChatMessages";
+import { WebUIChatMessages, type WebUIChatMessagesHandle } from "./chat/WebUIChatMessages";
 import { HistoryView } from "./HistoryView";
 import { getChatUrl, getProjectsUrl } from "../config/api";
 import { KEYBOARD_SHORTCUTS } from "../utils/constants";
@@ -560,6 +560,21 @@ export function ChatPage() {
   const clearAbortRef = useRef(false);
   const activeFetchAbortControllerRef = useRef<AbortController | null>(null);
   const activeLocalAbortReasonRef = useRef<"user" | "stall" | "system" | null>(null);
+
+  // Ref for chat messages component to control scroll
+  const chatMessagesRef = useRef<ChatMessagesHandle | WebUIChatMessagesHandle>(null);
+
+  // Listen for scroll-to-bottom message from parent window (open-ace Workspace)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "openace-scroll-to-bottom") {
+        chatMessagesRef.current?.scrollToBottom();
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   const abortLocalFetch = useCallback((reason: "user" | "stall" | "system") => {
     activeLocalAbortReasonRef.current = reason;
@@ -1792,11 +1807,13 @@ export function ChatPage() {
             {/* Chat Messages */}
             {experimental.useWebUIComponents ? (
               <WebUIChatMessages
+                ref={chatMessagesRef as React.Ref<WebUIChatMessagesHandle>}
                 messages={displayMessages}
                 expandThinking={expandThinking}
               />
             ) : (
               <ChatMessages
+                ref={chatMessagesRef as React.Ref<ChatMessagesHandle>}
                 messages={displayMessages}
                 isLoading={effectiveIsLoading}
                 expandThinking={expandThinking}
