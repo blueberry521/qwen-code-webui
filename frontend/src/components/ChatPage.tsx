@@ -567,6 +567,10 @@ export function ChatPage() {
   // Listen for scroll-to-bottom message from parent window (open-ace Workspace)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Security: Only accept messages from parent window (iframe embedding)
+      if (event.source !== window.parent) {
+        return;
+      }
       if (event.data?.type === "openace-scroll-to-bottom") {
         chatMessagesRef.current?.scrollToBottom();
       }
