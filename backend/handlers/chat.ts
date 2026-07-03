@@ -56,6 +56,14 @@ const AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 5_000; // 25 s
 /** Backend fallback — fires a few seconds after frontend should have acted. */
 const SAFETY_AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 2_000; // 28 s
 
+/**
+ * Delay before aborting when client disconnects during pending permission.
+ * Allows user time to respond to permission prompt despite transient disconnect.
+ * Aligns with CLI control-request timeout (30s) + buffer.
+ * @see https://github.com/ivycomputing/qwen-code-webui/issues/186
+ */
+const PENDING_PERMISSION_ABORT_DELAY_MS = 32_000; // 32 seconds
+
 function isAbortLikeError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") {
     return true;
@@ -379,6 +387,7 @@ async function executeQwenCommand(
             safeResolve(result);
           },
           abortSignal: abortController!.signal,
+          requestId, // 用于 cancel() 中检测 pending permissions
         });
       });
     };
@@ -692,36 +701,90 @@ export async function handleChatRequest(
     },
     cancel() {
       clearInterval(keepaliveId);
-      // Client disconnected — kill CLI subprocess to prevent infinite retry loops
       const ac = requestAbortControllers.get(chatRequest.requestId);
       if (ac) {
-        logger.chat.info(
-          "[DIAG] Client DISCONNECTED requestId={requestId} activeCount={activeCount} "
-          + "concurrentRequests={concurrentRequests}",
-          {
-            requestId: chatRequest.requestId,
-            activeCount: _activeChatCount,
-            concurrentRequests: requestAbortControllers.size,
-          },
-        );
-        ac.abort();
+        // 检查是否有属于当前请求的 pending permissions
+        const pendingForThisRequest = [...pendingPermissions.entries()]
+          .filter(([, pending]) => pending.requestId === chatRequest.requestId);
 
-        // Log diagnostic 3s after cancel. The SDK's transport.close() sends
-        // SIGTERM, then SIGKILL after 5s. Log unconditionally to capture
-        // cases where the subprocess outlives the abort signal cleanup.
-        const diagRequestId = chatRequest.requestId;
-        const checkId = setTimeout(() => {
-          logger.chat.warn(
-            "[DIAG] Post-cancel check requestId={requestId} activeCount={activeCount} "
+        if (pendingForThisRequest.length > 0) {
+          // 有 pending permissions，延迟 abort 给用户响应时间
+          logger.chat.info(
+            "[DIAG] Client DISCONNECTED with pending permissions, delaying abort "
+            + "requestId={requestId} pendingCount={pendingCount} activeCount={activeCount} "
             + "concurrentRequests={concurrentRequests}",
             {
-              requestId: diagRequestId,
+              requestId: chatRequest.requestId,
+              pendingCount: pendingForThisRequest.length,
               activeCount: _activeChatCount,
               concurrentRequests: requestAbortControllers.size,
             },
           );
-        }, 3_000);
-        if (checkId.unref) checkId.unref();
+
+          // 监听权限解决：当所有相关 permissions 被解决后提前 abort
+          const checkResolved = () => {
+            const remaining = [...pendingPermissions.entries()]
+              .filter(([, p]) => p.requestId === chatRequest.requestId);
+            if (remaining.length === 0) {
+              logger.chat.info(
+                "[DIAG] All pending permissions resolved after disconnect, aborting requestId={requestId}",
+                { requestId: chatRequest.requestId },
+              );
+              ac.abort();
+              requestAbortControllers.delete(chatRequest.requestId);
+            }
+          };
+
+          // 为每个 pending permission 包装 resolve 回调
+          for (const [permissionId, pending] of pendingForThisRequest) {
+            const originalResolve = pending.resolve;
+            pendingPermissions.set(permissionId, {
+              ...pending,
+              resolve: (result, scope) => {
+                originalResolve(result, scope);
+                checkResolved();
+              },
+            });
+          }
+
+          // 设置延迟 abort timer
+          const delayTimer = setTimeout(() => {
+            logger.chat.warn(
+              "[DIAG] Pending permission timeout, aborting requestId={requestId}",
+              { requestId: chatRequest.requestId },
+            );
+            ac.abort();
+            requestAbortControllers.delete(chatRequest.requestId);
+          }, PENDING_PERMISSION_ABORT_DELAY_MS);
+          if (delayTimer.unref) delayTimer.unref();
+        } else {
+          // 无 pending permissions，立即 abort（保持现有行为）
+          logger.chat.info(
+            "[DIAG] Client DISCONNECTED requestId={requestId} activeCount={activeCount} "
+            + "concurrentRequests={concurrentRequests}",
+            {
+              requestId: chatRequest.requestId,
+              activeCount: _activeChatCount,
+              concurrentRequests: requestAbortControllers.size,
+            },
+          );
+          ac.abort();
+
+          // 诊断日志
+          const diagRequestId = chatRequest.requestId;
+          const checkId = setTimeout(() => {
+            logger.chat.warn(
+              "[DIAG] Post-cancel check requestId={requestId} activeCount={activeCount} "
+              + "concurrentRequests={concurrentRequests}",
+              {
+                requestId: diagRequestId,
+                activeCount: _activeChatCount,
+                concurrentRequests: requestAbortControllers.size,
+              },
+            );
+          }, 3_000);
+          if (checkId.unref) checkId.unref();
+        }
       }
       // Clean up session mapping
       if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {

@@ -6,6 +6,7 @@ import { logger } from "../utils/logger.ts";
 export interface PendingPermission {
   resolve: (result: PermissionResult, scope?: "specific" | "all") => void;
   abortSignal: AbortSignal;
+  requestId: string; // 关联的请求 ID，用于延迟 abort 检测
 }
 
 export async function handlePermissionRespond(
