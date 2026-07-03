@@ -72,6 +72,7 @@ describe("handlePermissionRespond", () => {
 
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: abortController.signal,
       });
 
@@ -92,6 +93,7 @@ describe("handlePermissionRespond", () => {
     it("resolves with allow for basic allow request", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -112,6 +114,7 @@ describe("handlePermissionRespond", () => {
     it("resolves with updatedInput for allow request", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -131,6 +134,7 @@ describe("handlePermissionRespond", () => {
     it("resolves with scope for shell command", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -152,6 +156,7 @@ describe("handlePermissionRespond", () => {
     it("resolves with deny and default message", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -171,6 +176,7 @@ describe("handlePermissionRespond", () => {
     it("resolves with deny and custom message", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -192,6 +198,7 @@ describe("handlePermissionRespond", () => {
     it("includes answers in updatedInput for allow request", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -211,6 +218,7 @@ describe("handlePermissionRespond", () => {
     it("combines updatedInput and answers", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 
@@ -231,6 +239,7 @@ describe("handlePermissionRespond", () => {
     it("does not include answers in deny request", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
+        requestId: "test-id",
         abortSignal: mockAbortSignal,
       });
 

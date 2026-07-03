@@ -1183,4 +1183,143 @@ describe("Chat Handler - Permission Mode Tests", () => {
       expect(allChunks).toContain("loop detected");
     });
   });
+
+  describe("Disconnect during pending permission (issue #186)", () => {
+    // Mirrors PENDING_PERMISSION_ABORT_DELAY_MS in chat.ts (not exported).
+    const ABORT_DELAY_MS = 32_000;
+    let resolveTurn!: () => void;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      resolveTurn = () => {};
+    });
+
+    afterEach(async () => {
+      // Clear any pending timers (delay/keepalive) before returning to real time,
+      // then let the blocked turn settle so no dangling promises remain.
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      resolveTurn();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Start a request that emits one message, then blocks forever (simulating a
+    // turn awaiting a permission/tool). Returns once the abortController is
+    // registered and the turn is running.
+    async function startBlockedRequest(requestId: string, sessionId?: string) {
+      const chatRequest: ChatRequest = { message: "use a tool", requestId, sessionId };
+      mockContext.req.json = vi.fn().mockResolvedValue(chatRequest);
+
+      const turnBlocker = new Promise<void>((r) => { resolveTurn = r; });
+      mockQuery.mockReturnValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "thinking" }] },
+            session_id: sessionId,
+            parent_tool_use_id: null,
+          } as any;
+          await turnBlocker;
+        },
+        interrupt: vi.fn(),
+        next: vi.fn(),
+        return: vi.fn(),
+        throw: vi.fn(),
+      } as any);
+
+      const response = await handleChatRequest(mockContext, requestAbortControllers, pendingPermissions);
+      const reader = response.body!.getReader();
+      await reader.read(); // sync point: controller registered, turn now blocked
+      return reader;
+    }
+
+    it("does not abort immediately when a permission is pending", async () => {
+      const requestId = "cancel-pending-1";
+      const reader = await startBlockedRequest(requestId);
+      const ac = requestAbortControllers.get(requestId)!;
+      expect(ac).toBeTruthy();
+
+      pendingPermissions.set("perm-1", {
+        resolve: vi.fn(),
+        abortSignal: ac.signal,
+        requestId,
+      });
+
+      await reader.cancel();
+
+      // Core fix: disconnect during a pending permission must NOT kill the CLI.
+      expect(ac.signal.aborted).toBe(false);
+      expect(requestAbortControllers.has(requestId)).toBe(true);
+    });
+
+    it("does not abort when the permission is resolved; lets the turn continue", async () => {
+      const requestId = "cancel-pending-2";
+      const reader = await startBlockedRequest(requestId);
+      const ac = requestAbortControllers.get(requestId)!;
+      const realResolve = vi.fn();
+
+      pendingPermissions.set("perm-1", {
+        resolve: realResolve,
+        abortSignal: ac.signal,
+        requestId,
+      });
+      await reader.cancel();
+
+      // cancel() wraps the resolve. Mimic the real respond flow: handlePermissionRespond
+      // captures the entry, deletes it from the map, THEN calls resolve.
+      const wrappedResolve = pendingPermissions.get("perm-1")!.resolve;
+      pendingPermissions.delete("perm-1");
+      wrappedResolve({ behavior: "allow" }, undefined);
+
+      expect(realResolve).toHaveBeenCalledWith({ behavior: "allow" }, undefined);
+      // Resolving must not abort: the approved tool still has to execute.
+      expect(ac.signal.aborted).toBe(false);
+      expect(requestAbortControllers.has(requestId)).toBe(true);
+      // Safety timer was cleared on resolve; advancing past the delay aborts nothing.
+      vi.advanceTimersByTime(ABORT_DELAY_MS + 1_000);
+      expect(ac.signal.aborted).toBe(false);
+    });
+
+    it("force-aborts if the permission is still unresolved after the delay", async () => {
+      const requestId = "cancel-pending-3";
+      const sessionId = "sess-3";
+      const reader = await startBlockedRequest(requestId, sessionId);
+      const ac = requestAbortControllers.get(requestId)!;
+
+      pendingPermissions.set("perm-1", {
+        resolve: vi.fn(),
+        abortSignal: ac.signal,
+        requestId,
+      });
+      await reader.cancel();
+
+      vi.advanceTimersByTime(ABORT_DELAY_MS);
+
+      // Stuck prompt (neither user nor safety auto-approve resolved it) → force-abort.
+      expect(ac.signal.aborted).toBe(true);
+      expect(requestAbortControllers.has(requestId)).toBe(false);
+    });
+
+    it("does not abort a running turn when the prompt was already resolved (safety auto-approve)", async () => {
+      const requestId = "cancel-pending-4";
+      const reader = await startBlockedRequest(requestId);
+      const ac = requestAbortControllers.get(requestId)!;
+
+      pendingPermissions.set("perm-1", {
+        resolve: vi.fn(),
+        abortSignal: ac.signal,
+        requestId,
+      });
+      await reader.cancel();
+
+      // Simulate the 28s backend safety auto-approve settling + removing the prompt.
+      pendingPermissions.delete("perm-1");
+
+      vi.advanceTimersByTime(ABORT_DELAY_MS);
+
+      // The delay timer sees no pending prompt, so it must not kill the running turn.
+      expect(ac.signal.aborted).toBe(false);
+      expect(requestAbortControllers.has(requestId)).toBe(true);
+    });
+  });
 });

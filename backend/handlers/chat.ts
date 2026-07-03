@@ -57,9 +57,18 @@ const AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 5_000; // 25 s
 const SAFETY_AUTO_APPROVE_MS = CLI_CONTROL_REQUEST_TIMEOUT_MS - 2_000; // 28 s
 
 /**
- * Delay before aborting when client disconnects during pending permission.
- * Allows user time to respond to permission prompt despite transient disconnect.
- * Aligns with CLI control-request timeout (30s) + buffer.
+ * Hard safety cap used when the client disconnects while a permission prompt is
+ * pending. We do NOT abort on disconnect in that case (issue #186): we let the
+ * turn keep running so the user — or the 28 s backend safety auto-approve — can
+ * resolve the prompt and the just-approved tool can actually execute. This timer
+ * only force-aborts if the prompt is STILL unresolved after the delay (neither
+ * path settled it), so a stuck request can't hold the CLI forever. It sits just
+ * past the 28 s safety auto-approve and the CLI's 30 s control-request timeout.
+ *
+ * It must NOT abort a turn that is already running: the safety auto-approve
+ * resolves the prompt at 28 s, so by 32 s the prompt is gone and this timer is a
+ * no-op, leaving the running turn to be cleaned up by executeQwenCommand's
+ * finally block.
  * @see https://github.com/ivycomputing/qwen-code-webui/issues/186
  */
 const PENDING_PERMISSION_ABORT_DELAY_MS = 32_000; // 32 seconds
@@ -708,9 +717,13 @@ export async function handleChatRequest(
           .filter(([, pending]) => pending.requestId === chatRequest.requestId);
 
         if (pendingForThisRequest.length > 0) {
-          // 有 pending permissions，延迟 abort 给用户响应时间
+          // Pending permission while the client disconnects: do NOT abort. Letting
+          // the turn keep running is the whole point of issue #186 — the user (or
+          // the 28 s backend safety auto-approve) can still resolve the prompt, and
+          // the approved tool can then execute. executeQwenCommand's finally block
+          // aborts and cleans up the controller + session when the turn ends.
           logger.chat.info(
-            "[DIAG] Client DISCONNECTED with pending permissions, delaying abort "
+            "[DIAG] Client DISCONNECTED with pending permissions, deferring abort "
             + "requestId={requestId} pendingCount={pendingCount} activeCount={activeCount} "
             + "concurrentRequests={concurrentRequests}",
             {
@@ -721,8 +734,8 @@ export async function handleChatRequest(
             },
           );
 
-          // 统一的清理函数，确保所有资源正确释放
-          const cleanup = () => {
+          // Abort + cleanup, used only by the stuck-request safety timer below.
+          const forceAbort = () => {
             ac.abort();
             requestAbortControllers.delete(chatRequest.requestId);
             if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {
@@ -730,44 +743,48 @@ export async function handleChatRequest(
             }
           };
 
-          // 延迟 abort timer（先声明，供 checkResolved 使用）
-          let delayTimer: ReturnType<typeof setTimeout>;
-          
-          // 监听权限解决：当所有相关 permissions 被解决后提前 abort
-          const checkResolved = () => {
-            const remaining = [...pendingPermissions.entries()]
-              .filter(([, p]) => p.requestId === chatRequest.requestId);
-            if (remaining.length === 0) {
-              clearTimeout(delayTimer); // 清理 timer，防止泄漏
-              logger.chat.info(
-                "[DIAG] All pending permissions resolved after disconnect, aborting requestId={requestId}",
+          // Safety net: force-abort only if the prompt is STILL pending after the
+          // delay (neither the user nor the 28 s safety auto-approve settled it), so
+          // a stuck request can't hold the CLI forever. If the prompt was already
+          // resolved, the turn is running and the finally block will clean it up —
+          // aborting now would kill the approved tool mid-execution (issue #186).
+          const delayTimer = setTimeout(() => {
+            const stillPending = [...pendingPermissions.values()]
+              .some((p) => p.requestId === chatRequest.requestId);
+            if (stillPending) {
+              logger.chat.warn(
+                "[DIAG] Pending permission still unresolved after delay, force-aborting requestId={requestId}",
                 { requestId: chatRequest.requestId },
               );
-              cleanup();
+              forceAbort();
             }
+          }, PENDING_PERMISSION_ABORT_DELAY_MS);
+          if (delayTimer.unref) delayTimer.unref();
+
+          // When the user resolves the prompt, stop the safety timer and let the
+          // turn continue. Do NOT abort here: originalResolve() only schedules the
+          // canUseTool microtask, while ac.abort() synchronously fires transport
+          // teardown → SIGTERM in the same tick, killing the CLI before the
+          // just-approved tool runs. The finally block handles cleanup on turn end.
+          const onResolved = () => {
+            clearTimeout(delayTimer);
+            logger.chat.info(
+              "[DIAG] Pending permission resolved after disconnect, letting turn continue requestId={requestId}",
+              { requestId: chatRequest.requestId },
+            );
           };
 
-          // 为每个 pending permission 包装 resolve 回调
+          // Wrap each pending permission's resolve so we detect settlement.
           for (const [permissionId, pending] of pendingForThisRequest) {
             const originalResolve = pending.resolve;
             pendingPermissions.set(permissionId, {
               ...pending,
               resolve: (result, scope) => {
                 originalResolve(result, scope);
-                checkResolved();
+                onResolved();
               },
             });
           }
-
-          // 设置延迟 abort timer
-          delayTimer = setTimeout(() => {
-            logger.chat.warn(
-              "[DIAG] Pending permission timeout, aborting requestId={requestId}",
-              { requestId: chatRequest.requestId },
-            );
-            cleanup();
-          }, PENDING_PERMISSION_ABORT_DELAY_MS);
-          if (delayTimer.unref) delayTimer.unref();
         } else {
           // 无 pending permissions，立即 abort（保持现有行为）
           logger.chat.info(
