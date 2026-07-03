@@ -721,17 +721,29 @@ export async function handleChatRequest(
             },
           );
 
+          // 统一的清理函数，确保所有资源正确释放
+          const cleanup = () => {
+            ac.abort();
+            requestAbortControllers.delete(chatRequest.requestId);
+            if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {
+              activeSessions.delete(chatRequest.sessionId);
+            }
+          };
+
+          // 延迟 abort timer（先声明，供 checkResolved 使用）
+          let delayTimer: ReturnType<typeof setTimeout>;
+          
           // 监听权限解决：当所有相关 permissions 被解决后提前 abort
           const checkResolved = () => {
             const remaining = [...pendingPermissions.entries()]
               .filter(([, p]) => p.requestId === chatRequest.requestId);
             if (remaining.length === 0) {
+              clearTimeout(delayTimer); // 清理 timer，防止泄漏
               logger.chat.info(
                 "[DIAG] All pending permissions resolved after disconnect, aborting requestId={requestId}",
                 { requestId: chatRequest.requestId },
               );
-              ac.abort();
-              requestAbortControllers.delete(chatRequest.requestId);
+              cleanup();
             }
           };
 
@@ -748,13 +760,12 @@ export async function handleChatRequest(
           }
 
           // 设置延迟 abort timer
-          const delayTimer = setTimeout(() => {
+          delayTimer = setTimeout(() => {
             logger.chat.warn(
               "[DIAG] Pending permission timeout, aborting requestId={requestId}",
               { requestId: chatRequest.requestId },
             );
-            ac.abort();
-            requestAbortControllers.delete(chatRequest.requestId);
+            cleanup();
           }, PENDING_PERMISSION_ABORT_DELAY_MS);
           if (delayTimer.unref) delayTimer.unref();
         } else {
@@ -784,11 +795,12 @@ export async function handleChatRequest(
             );
           }, 3_000);
           if (checkId.unref) checkId.unref();
+
+          // Clean up session mapping
+          if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {
+            activeSessions.delete(chatRequest.sessionId);
+          }
         }
-      }
-      // Clean up session mapping
-      if (chatRequest.sessionId && activeSessions.get(chatRequest.sessionId) === chatRequest.requestId) {
-        activeSessions.delete(chatRequest.sessionId);
       }
     },
   });
