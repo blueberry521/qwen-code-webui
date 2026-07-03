@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useTranslation } from "react-i18next";
 import type { AllMessage } from "../../types";
 import {
@@ -27,7 +27,12 @@ interface ChatMessagesProps {
   expandThinking?: boolean;
 }
 
-export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessagesProps) {
+export interface ChatMessagesHandle {
+  scrollToBottom: () => void;
+}
+
+export const ChatMessages = forwardRef<ChatMessagesHandle, ChatMessagesProps>(
+  function ChatMessages({ messages, isLoading, expandThinking }, ref) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -37,7 +42,13 @@ export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessag
     if (messagesEndRef.current && messagesEndRef.current.scrollIntoView) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
+    shouldAutoScroll.current = true;
   };
+
+  // Expose scrollToBottom to parent via ref
+  useImperativeHandle(ref, () => ({
+    scrollToBottom,
+  }), []);
 
   // Track whether user has scrolled away from bottom
   useEffect(() => {
@@ -124,7 +135,8 @@ export function ChatMessages({ messages, isLoading, expandThinking }: ChatMessag
       )}
     </div>
   );
-}
+  }
+);
 
 function EmptyState() {
   const { t } = useTranslation();
