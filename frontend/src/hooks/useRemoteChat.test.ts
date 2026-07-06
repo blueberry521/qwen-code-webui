@@ -4,6 +4,7 @@ import {
   abortRemoteRequest,
   createRemoteSession,
   createRemoteSessionStream,
+  createRemoteSessionStreamWithReconnect,
   getRemoteSessionStatus,
   pauseRemoteSession,
   resumeRemoteSession,
@@ -27,6 +28,7 @@ vi.mock("../api/openace", () => ({
   abortRemoteRequest: vi.fn(),
   getRemoteSessionStatus: vi.fn(),
   createRemoteSessionStream: vi.fn(),
+  createRemoteSessionStreamWithReconnect: vi.fn(),
   sendPermissionResponse: vi.fn(),
   switchRemoteModel: vi.fn(),
   pauseRemoteSession: vi.fn(),
@@ -74,13 +76,13 @@ describe("useRemoteChat", () => {
     vi.mocked(switchRemoteModel).mockResolvedValue({ success: true } as never);
     vi.mocked(pauseRemoteSession).mockResolvedValue({ success: true } as never);
     vi.mocked(resumeRemoteSession).mockResolvedValue({ success: true } as never);
-    vi.mocked(createRemoteSessionStream).mockImplementation(
-      ((_sessionId, onLine, onError, onDone) => {
-        streamCallbacks.onLine = onLine;
-        streamCallbacks.onError = onError;
-        streamCallbacks.onDone = onDone;
+    vi.mocked(createRemoteSessionStreamWithReconnect).mockImplementation(
+      ((_sessionId, options) => {
+        streamCallbacks.onLine = options.onLine;
+        streamCallbacks.onError = options.onError;
+        streamCallbacks.onDone = options.onDone;
         return { close: vi.fn() } as unknown as EventSource;
-      }) as typeof createRemoteSessionStream
+      }) as typeof createRemoteSessionStreamWithReconnect
     );
   });
 
