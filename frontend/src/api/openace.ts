@@ -747,7 +747,7 @@ export function createRemoteSessionStreamWithReconnect(
     maxRetries = 5,
     initialRetryDelay = 1000,
     maxRetryDelay = 30000,
-    stallTimeout = 60000,  // 60 seconds stall detection (Issue #195)
+    stallTimeout = 35000,  // 35s: backend heartbeat is 10s, use 3.5x to avoid false stall detection
   } = options;
 
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
@@ -756,6 +756,23 @@ export function createRemoteSessionStreamWithReconnect(
   let es: EventSource;
   let reconnectTimer: number | null = null;
   let stallTimer: number | null = null;  // Stall detection timer
+
+  // Shared reconnect scheduler to avoid code duplication
+  const scheduleReconnect = (reason: string) => {
+    if (retryCount < maxRetries && maxRetries > 0) {
+      retryCount++;
+      console.debug(`[SSE] Reconnecting after ${reason}...`);
+      onStateChange?.('reconnecting');
+      reconnectTimer = window.setTimeout(() => {
+        currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
+        connect();
+      }, currentDelay);
+    } else {
+      console.debug(`[SSE] Max retries exceeded after ${reason}, disconnected`);
+      onStateChange?.('disconnected');
+      onError(new Event('error'));
+    }
+  };
 
   // Stall detection: reset timer on every data received (Issue #195)
   const resetStallTimer = () => {
@@ -766,32 +783,19 @@ export function createRemoteSessionStreamWithReconnect(
       console.warn("[SSE] Stall detected, no data for", stallTimeout, "ms");
       if (es.readyState === EventSource.OPEN) {
         es.close();
-        // Trigger reconnect if retries available
-        if (retryCount < maxRetries && maxRetries > 0) {
-          retryCount++;
-          console.log("[SSE] Reconnecting after stall...");
-          onStateChange?.('reconnecting');
-          reconnectTimer = window.setTimeout(() => {
-            currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
-            connect();
-          }, currentDelay);
-        } else {
-          console.log("[SSE] Max retries exceeded after stall, disconnected");
-          onStateChange?.('disconnected');
-          onError(new Event('error'));
-        }
+        scheduleReconnect('stall');
       }
     }, stallTimeout);
   };
 
   const connect = () => {
-    console.log("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
+    console.debug("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
     onStateChange?.(retryCount > 0 ? 'reconnecting' : 'connected');
 
     es = new EventSource(url);
 
     es.onopen = () => {
-      console.log("[SSE] Connection opened");
+      console.debug("[SSE] Connection opened");
       retryCount = 0;
       currentDelay = initialRetryDelay;
       onStateChange?.('connected');
@@ -801,7 +805,7 @@ export function createRemoteSessionStreamWithReconnect(
     es.onmessage = (event) => {
       resetStallTimer();  // Reset stall timer on every message
       if (event.data === "[DONE]") {
-        console.log("[SSE] Received [DONE]");
+        console.debug("[SSE] Received [DONE]");
         es.close();
         if (stallTimer !== null) {
           window.clearTimeout(stallTimer);
@@ -820,27 +824,16 @@ export function createRemoteSessionStreamWithReconnect(
         stallTimer = null;
       }
       es.close();
-
-      if (retryCount < maxRetries && maxRetries > 0) {
-        retryCount++;
-        console.log("[SSE] Reconnecting in", currentDelay, "ms");
-        onStateChange?.('reconnecting');
-
-        reconnectTimer = window.setTimeout(() => {
-          currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
-          connect();
-        }, currentDelay);
-      } else {
-        console.log("[SSE] Max retries exceeded, disconnected");
-        onStateChange?.('disconnected');
-        onError(e);
-      }
+      scheduleReconnect('error');
     };
   };
 
   connect();
 
   // Return a wrapped EventSource that also clears reconnect timer on close
+  // Note: onopen/onmessage/onerror are null because handlers are set directly
+  // on the internal `es` in connect(). These null properties exist only for
+  // type compatibility with EventSource interface.
   const wrappedEs = {
     close: () => {
       if (reconnectTimer !== null) {
@@ -859,9 +852,16 @@ export function createRemoteSessionStreamWithReconnect(
     get url() {
       return es.url;
     },
-    addEventListener: es.addEventListener.bind(es),
-    removeEventListener: es.removeEventListener.bind(es),
-    dispatchEvent: es.dispatchEvent.bind(es),
+    // Dynamic proxy to current EventSource instance (not bound to old es)
+    addEventListener: (...args: Parameters<EventSource['addEventListener']>) => {
+      es.addEventListener(...args);
+    },
+    removeEventListener: (...args: Parameters<EventSource['removeEventListener']>) => {
+      es.removeEventListener(...args);
+    },
+    dispatchEvent: (event: Event) => {
+      return es.dispatchEvent(event);
+    },
     onopen: null as ((this: EventSource, ev: Event) => any) | null,
     onmessage: null as ((this: EventSource, ev: MessageEvent) => any) | null,
     onerror: null as ((this: EventSource, ev: Event) => any) | null,
