@@ -7,6 +7,9 @@ import {
   abortRemoteRequest,
   getRemoteSessionStatus,
   createRemoteSessionStream,
+  createRemoteSessionStreamWithReconnect,
+  type SSEConnectionState,
+  type SSEOptions,
   sendPermissionResponse,
   switchRemoteModel,
   pauseRemoteSession,
@@ -48,6 +51,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sseState, setSseState] = useState<SSEConnectionState>("connected");
   const eventSourceRef = useRef<EventSource | null>(null);
   const abortAckTimerRef = useRef<number | null>(null);
   const sendingRef = useRef(false);
@@ -179,7 +183,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         const currentOptions = optionsRef.current;
         if (currentOptions?.onStreamLine && currentOptions.streamingContext) {
           console.log("[useRemoteChat] Opening SSE for session:", response.session.session_id);
-          const es = createRemoteSessionStream(
+          const es = createRemoteSessionStreamWithReconnect(
             response.session.session_id,
             (line) => {
               handleSSELine(line);
@@ -312,7 +316,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
             }
           }
 
-          const es = createRemoteSessionStream(
+          const es = createRemoteSessionStreamWithReconnect(
             s.session_id,
             (line) => {
               handleSSELine(line);

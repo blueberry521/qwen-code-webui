@@ -707,42 +707,124 @@ export async function resumeRemoteSession(
   return response.json();
 }
 
+export type SSEConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+
+export interface SSEOptions {
+  onLine: (line: string) => void;
+  onError: (err: Event) => void;
+  onDone: () => void;
+  onStateChange?: (state: SSEConnectionState) => void;
+  maxRetries?: number;
+  initialRetryDelay?: number;
+  maxRetryDelay?: number;
+}
+
 export function createRemoteSessionStream(
   sessionId: string,
   onLine: (line: string) => void,
   onError: (err: Event) => void,
   onDone: () => void,
 ): EventSource {
-  const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
-  console.log("[SSE] Connecting to:", url);
-  const es = new EventSource(url);
-  es.onopen = () => {
-    console.log("[SSE] Connection opened");
-  };
-  es.onmessage = (event) => {
-    if (event.data === "[DONE]") {
-      console.log("[SSE] Received [DONE]");
-      es.close();
-      onDone();
-      return;
-    }
-    onLine(event.data);
-  };
-  es.onerror = (e) => {
-    console.error("[SSE] Error, readyState:", es.readyState, e);
-    es.close();
-    onError(e);
-  };
-  return es;
+  // Legacy API - no reconnect, just wrap the new function
+  return createRemoteSessionStreamWithReconnect(sessionId, {
+    onLine,
+    onError,
+    onDone,
+    maxRetries: 0, // No reconnect for legacy API
+  });
 }
 
-// -------------------------------------------------------
-// Remote Git API functions
-// -------------------------------------------------------
+export function createRemoteSessionStreamWithReconnect(
+  sessionId: string,
+  options: SSEOptions,
+): EventSource {
+  const {
+    onLine,
+    onError,
+    onDone,
+    onStateChange,
+    maxRetries = 5,
+    initialRetryDelay = 1000,
+    maxRetryDelay = 30000,
+  } = options;
 
-/**
- * Fetch git status from a remote machine via Open-ACE proxy.
- * Only called in remote workspace mode (workspaceType=remote).
+  const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
+  let retryCount = 0;
+  let currentDelay = initialRetryDelay;
+  let es: EventSource;
+  let reconnectTimer: number | null = null;
+
+  const connect = () => {
+    console.log("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
+    onStateChange?.(retryCount > 0 ? 'reconnecting' : 'connected');
+    
+    es = new EventSource(url);
+    
+    es.onopen = () => {
+      console.log("[SSE] Connection opened");
+      retryCount = 0;
+      currentDelay = initialRetryDelay;
+      onStateChange?.('connected');
+    };
+    
+    es.onmessage = (event) => {
+      if (event.data === "[DONE]") {
+        console.log("[SSE] Received [DONE]");
+        es.close();
+        onDone();
+        return;
+      }
+      onLine(event.data);
+    };
+    
+    es.onerror = (e) => {
+      console.error("[SSE] Error, readyState:", es.readyState, e);
+      es.close();
+      
+      if (retryCount < maxRetries && maxRetries > 0) {
+        retryCount++;
+        console.log("[SSE] Reconnecting in", currentDelay, "ms");
+        onStateChange?.('reconnecting');
+        
+        reconnectTimer = window.setTimeout(() => {
+          currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
+          connect();
+        }, currentDelay);
+      } else {
+        console.log("[SSE] Max retries exceeded, disconnected");
+        onStateChange?.('disconnected');
+        onError(e);
+      }
+    };
+  };
+
+  connect();
+
+  // Return a wrapped EventSource that also clears reconnect timer on close
+  const wrappedEs = {
+    close: () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      es.close();
+    },
+    get readyState() {
+      return es.readyState;
+    },
+    get url() {
+      return es.url;
+    },
+    addEventListener: es.addEventListener.bind(es),
+    removeEventListener: es.removeEventListener.bind(es),
+    dispatchEvent: es.dispatchEvent.bind(es),
+    onopen: null as ((this: EventSource, ev: Event) => any) | null,
+    onmessage: null as ((this: EventSource, ev: MessageEvent) => any) | null,
+    onerror: null as ((this: EventSource, ev: Event) => any) | null,
+  } as EventSource;
+
+  return wrappedEs;
+}
  */
 export async function fetchRemoteGitStatus(
   machineId: string,
