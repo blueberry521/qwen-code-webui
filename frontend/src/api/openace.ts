@@ -717,6 +717,7 @@ export interface SSEOptions {
   maxRetries?: number;
   initialRetryDelay?: number;
   maxRetryDelay?: number;
+  stallTimeout?: number;  // Stall detection timeout in ms (Issue #195)
 }
 
 export function createRemoteSessionStream(
@@ -746,6 +747,7 @@ export function createRemoteSessionStreamWithReconnect(
     maxRetries = 5,
     initialRetryDelay = 1000,
     maxRetryDelay = 30000,
+    stallTimeout = 60000,  // 60 seconds stall detection (Issue #195)
   } = options;
 
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
@@ -753,39 +755,77 @@ export function createRemoteSessionStreamWithReconnect(
   let currentDelay = initialRetryDelay;
   let es: EventSource;
   let reconnectTimer: number | null = null;
+  let stallTimer: number | null = null;  // Stall detection timer
+
+  // Stall detection: reset timer on every data received (Issue #195)
+  const resetStallTimer = () => {
+    if (stallTimer !== null) {
+      window.clearTimeout(stallTimer);
+    }
+    stallTimer = window.setTimeout(() => {
+      console.warn("[SSE] Stall detected, no data for", stallTimeout, "ms");
+      if (es.readyState === EventSource.OPEN) {
+        es.close();
+        // Trigger reconnect if retries available
+        if (retryCount < maxRetries && maxRetries > 0) {
+          retryCount++;
+          console.log("[SSE] Reconnecting after stall...");
+          onStateChange?.('reconnecting');
+          reconnectTimer = window.setTimeout(() => {
+            currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
+            connect();
+          }, currentDelay);
+        } else {
+          console.log("[SSE] Max retries exceeded after stall, disconnected");
+          onStateChange?.('disconnected');
+          onError(new Event('error'));
+        }
+      }
+    }, stallTimeout);
+  };
 
   const connect = () => {
     console.log("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
     onStateChange?.(retryCount > 0 ? 'reconnecting' : 'connected');
-    
+
     es = new EventSource(url);
-    
+
     es.onopen = () => {
       console.log("[SSE] Connection opened");
       retryCount = 0;
       currentDelay = initialRetryDelay;
       onStateChange?.('connected');
+      resetStallTimer();  // Start stall detection on connection open
     };
-    
+
     es.onmessage = (event) => {
+      resetStallTimer();  // Reset stall timer on every message
       if (event.data === "[DONE]") {
         console.log("[SSE] Received [DONE]");
         es.close();
+        if (stallTimer !== null) {
+          window.clearTimeout(stallTimer);
+          stallTimer = null;
+        }
         onDone();
         return;
       }
       onLine(event.data);
     };
-    
+
     es.onerror = (e) => {
       console.error("[SSE] Error, readyState:", es.readyState, e);
+      if (stallTimer !== null) {
+        window.clearTimeout(stallTimer);
+        stallTimer = null;
+      }
       es.close();
-      
+
       if (retryCount < maxRetries && maxRetries > 0) {
         retryCount++;
         console.log("[SSE] Reconnecting in", currentDelay, "ms");
         onStateChange?.('reconnecting');
-        
+
         reconnectTimer = window.setTimeout(() => {
           currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
           connect();
@@ -807,6 +847,10 @@ export function createRemoteSessionStreamWithReconnect(
         window.clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      if (stallTimer !== null) {
+        window.clearTimeout(stallTimer);
+        stallTimer = null;
+      }
       es.close();
     },
     get readyState() {
@@ -825,6 +869,14 @@ export function createRemoteSessionStreamWithReconnect(
 
   return wrappedEs;
 }
+
+// -------------------------------------------------------
+// Remote Git API functions
+// -------------------------------------------------------
+
+/**
+ * Fetch git status from a remote machine via Open-ACE proxy.
+ * Only called in remote workspace mode (workspaceType=remote).
  */
 export async function fetchRemoteGitStatus(
   machineId: string,

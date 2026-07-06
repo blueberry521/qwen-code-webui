@@ -355,6 +355,7 @@ export function useRemoteChat(options?: RemoteChatOptions) {
               },
             },
           );
+          eventSourceRef.current = es;
         }
         setIsLoading(false);
       } catch (err) {
