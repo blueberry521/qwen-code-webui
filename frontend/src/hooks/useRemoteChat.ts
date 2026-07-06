@@ -182,33 +182,43 @@ export function useRemoteChat(options?: RemoteChatOptions) {
         // Open SSE connection — read options from ref to avoid stale closure
         const currentOptions = optionsRef.current;
         if (currentOptions?.onStreamLine && currentOptions.streamingContext) {
-          console.log("[useRemoteChat] Opening SSE for session:", response.session.session_id);
           const es = createRemoteSessionStreamWithReconnect(
             response.session.session_id,
-            (line) => {
-              handleSSELine(line);
+            {
+              onLine: (line) => {
+                handleSSELine(line);
+              },
+              onError: (err) => {
+                console.error("[useRemoteChat] SSE error:", err);
+                setError(t("chat.remoteDisconnected"));
+                clearAbortAckTimer();
+                setIsStopping(false);
+                setIsLoading(false);
+                clearStreamingState();
+                setSession((prev) =>
+                  prev ? { ...prev, status: "error" } : null
+                );
+              },
+              onDone: () => {
+                console.log("[useRemoteChat] SSE done");
+                clearAbortAckTimer();
+                setIsStopping(false);
+                setIsLoading(false);
+                clearStreamingState();
+                // If the session was active and SSE closed, it likely means
+                // the server was restarted or the session was marked completed.
+                if (session?.status === "active") {
+                  setError(t("chat.remoteEnded"));
+                  setSession((prev) =>
+                    prev ? { ...prev, status: "completed" } : null
+                  );
+                }
+              },
+              onStateChange: (state) => {
+                setSseState(state);
+              },
             },
-            (err) => {
-              console.error("[useRemoteChat] SSE error:", err);
-              setError(t("chat.remoteDisconnected"));
-              clearAbortAckTimer();
-              setIsStopping(false);
-              setIsLoading(false);
-              clearStreamingState();
-              setSession((prev) =>
-                prev ? { ...prev, status: "error" } : null
-              );
-            },
-            () => {
-              console.log("[useRemoteChat] SSE done");
-              clearAbortAckTimer();
-              setIsStopping(false);
-              setIsLoading(false);
-              clearStreamingState();
-              // If the session was active and SSE closed, it likely means
-              // the server was restarted or the session was marked completed.
-              if (session?.status === "active") {
-                setError(t("chat.remoteEnded"));
+          );
                 setSession((prev) =>
                   prev ? { ...prev, status: "completed" } : null
                 );
@@ -318,29 +328,33 @@ export function useRemoteChat(options?: RemoteChatOptions) {
 
           const es = createRemoteSessionStreamWithReconnect(
             s.session_id,
-            (line) => {
-              handleSSELine(line);
-            },
-            (err) => {
-              console.error("[useRemoteChat] SSE error:", err);
-              setError(t("chat.remoteReconnectFailed"));
-              clearAbortAckTimer();
-              setIsStopping(false);
-              setIsLoading(false);
-              clearStreamingState();
-              setSession((prev) =>
-                prev ? { ...prev, status: "error" } : null
-              );
-            },
-            () => {
-              console.log("[useRemoteChat] SSE done");
-              clearAbortAckTimer();
-              setIsStopping(false);
-              setIsLoading(false);
-              clearStreamingState();
+            {
+              onLine: (line) => {
+                handleSSELine(line);
+              },
+              onError: (err) => {
+                console.error("[useRemoteChat] SSE error:", err);
+                setError(t("chat.remoteReconnectFailed"));
+                clearAbortAckTimer();
+                setIsStopping(false);
+                setIsLoading(false);
+                clearStreamingState();
+                setSession((prev) =>
+                  prev ? { ...prev, status: "error" } : null
+                );
+              },
+              onDone: () => {
+                console.log("[useRemoteChat] SSE done");
+                clearAbortAckTimer();
+                setIsStopping(false);
+                setIsLoading(false);
+                clearStreamingState();
+              },
+              onStateChange: (state) => {
+                setSseState(state);
+              },
             },
           );
-          eventSourceRef.current = es;
         }
         setIsLoading(false);
       } catch (err) {
