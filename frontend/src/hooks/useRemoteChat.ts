@@ -219,12 +219,6 @@ export function useRemoteChat(options?: RemoteChatOptions) {
               },
             },
           );
-                setSession((prev) =>
-                  prev ? { ...prev, status: "completed" } : null
-                );
-              }
-            },
-          );
           eventSourceRef.current = es;
           // SSE is a long-lived background connection — once opened the
           // session is established and the user should be able to type.
