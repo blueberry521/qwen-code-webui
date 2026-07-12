@@ -42,11 +42,11 @@ function isCodeFile(path: string): boolean {
 function FileIcon({ path }: { path: string }) {
   if (isCodeFile(path)) {
     return (
-      <CodeBracketIcon className="w-4 h-4 text-slate-400 dark:text-slate-400 flex-shrink-0" />
+      <CodeBracketIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
     );
   }
   return (
-    <DocumentIcon className="w-4 h-4 text-slate-400 dark:text-slate-400 flex-shrink-0" />
+    <DocumentIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
   );
 }
 

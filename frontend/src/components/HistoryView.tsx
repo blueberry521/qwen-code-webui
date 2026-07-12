@@ -151,7 +151,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
                 </div>
                 <div className="ml-4 flex-shrink-0">
                   <svg
-                    className="w-5 h-5 text-slate-400 dark:text-slate-400"
+                    className="w-5 h-5 text-slate-400"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
