@@ -1548,7 +1548,7 @@ export function ChatPage() {
   }, [effectiveIsLoading, currentRequestId, handleAbort, permissionMode, setPermissionMode]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 text-slate-800 dark:text-slate-100">
       <div className={`h-screen flex flex-col ${showFileChanges ? "" : "max-w-6xl mx-auto"} p-3 sm:p-6`}>
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -1556,7 +1556,7 @@ export function ChatPage() {
             {!isIntegratedMode() && (isHistoryView || isLoadedConversation) && (
               <button
                 onClick={isHistoryView ? handleBackToChat : handleBackToHistory}
-                className="p-1.5 rounded-lg bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow-md"
+                className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 shadow-sm hover:shadow-md"
                 aria-label={isHistoryView ? t("chat.backToChat") : t("chat.backToHistory")}
               >
                 <ChevronLeftIcon className="w-4 h-4 text-slate-600 dark:text-slate-400" />
@@ -1671,10 +1671,10 @@ export function ChatPage() {
             {!isHistoryView && (
               <button
                 onClick={handleToggleFileChangesPanel}
-                className={`p-2 rounded-lg border transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow-md ${
+                className={`p-2 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
                   showFileChanges
                     ? "bg-blue-600 dark:bg-blue-600 border-blue-700 dark:border-blue-500 scale-105"
-                    : "bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800"
+                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800"
                 }`}
                 aria-label={
                   showFileChanges
@@ -1720,7 +1720,7 @@ export function ChatPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-slate-600 dark:text-slate-400">
+              <p className="text-slate-600 dark:text-slate-300">
                 {t("chat.loadingHistory")}
               </p>
             </div>
@@ -1747,7 +1747,7 @@ export function ChatPage() {
               <h2 className="text-slate-800 dark:text-slate-100 text-xl font-semibold mb-2">
                 {t("chat.errorLoadingConversation")}
               </h2>
-              <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              <p className="text-slate-600 dark:text-slate-300 text-sm mb-4">
                 {historyError}
               </p>
               <button

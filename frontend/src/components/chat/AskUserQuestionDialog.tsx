@@ -213,7 +213,7 @@ export function AskUserQuestionDialog({
   return (
     <div
       ref={dialogRef}
-      className="flex-shrink-0 px-4 py-4 bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl backdrop-blur-sm shadow-sm"
+      className="flex-shrink-0 px-4 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm"
       role="dialog"
       aria-labelledby="dialog-title"
       aria-modal="true"

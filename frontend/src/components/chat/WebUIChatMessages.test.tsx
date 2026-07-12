@@ -18,6 +18,22 @@ vi.mock("@qwen-code/webui", () => ({
   )),
 }));
 
+// Mock useSettings hook
+vi.mock("../../hooks/useSettings", () => ({
+  useSettings: () => ({
+    theme: "dark",
+    enterBehavior: "send",
+    expandThinking: true,
+    experimental: {},
+    isEmbeddedMode: false,
+    toggleTheme: vi.fn(),
+    toggleEnterBehavior: vi.fn(),
+    toggleExpandThinking: vi.fn(),
+    updateSettings: vi.fn(),
+    settings: { theme: "dark", enterBehavior: "send", expandThinking: true },
+  }),
+}));
+
 // Mock useTranslation hook
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({

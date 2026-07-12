@@ -1,4 +1,14 @@
+/* Import @qwen-code/webui styles in a cascade layer so its utility classes
+   (e.g. .bg-white) cannot override Tailwind dark-mode utilities like
+   dark:bg-slate-900.  The webui package ships un-layered Tailwind-v3-style
+   helpers; without layering they win over TW v4 layered utilities because
+   non-layered CSS always beats layered CSS regardless of specificity. */
+@import "@qwen-code/webui/styles.css" layer(webui);
+
 @import "tailwindcss";
+
+/* Ensure the webui layer sits below all Tailwind layers */
+@layer webui, theme, base, components, utilities;
 
 /* Dark mode variant: matches when ancestor has .dark class */
 @variant dark (&:where(.dark, .dark *));
@@ -41,4 +51,82 @@
   .dark .model-option-hover:hover {
     background-color: rgb(75 85 99); /* slate-600 */
   }
+}
+
+/* ==========================================================================
+   ChatViewer Dark/Light Theme Overrides (Issue #1619)
+
+   The @qwen-code/webui ChatViewer uses :root dark defaults and only switches
+   to light via @media (prefers-color-scheme:light) on .auto-theme class.
+   This does not follow the app's .dark class toggle. We override the CSS
+   variables explicitly so the ChatViewer matches the current app theme.
+   ========================================================================== */
+
+/* Light mode: when .dark class is NOT on html, force ChatViewer to use light colors.
+   These overrides target both the ChatViewer wrapper and the :root scope so that
+   all webui CSS variable references resolve to light-mode values. */
+:root:not(.dark) {
+  --app-primary-foreground: #1f2937;
+  --app-secondary-foreground: #6b7280;
+  --app-background: #ffffff;
+  --app-primary-background: #ffffff;
+  --app-background-secondary: #f3f4f6;
+  --app-secondary-background: #f3f4f6;
+  --app-background-tertiary: #e5e7eb;
+  --app-foreground: #1f2937;
+  --app-foreground-secondary: #6b7280;
+  --app-foreground-muted: #9ca3af;
+  --app-border: #e5e7eb;
+  --app-primary-border-color: #e5e7eb;
+  --app-input-background: #ffffff;
+  --app-input-border: #d1d5db;
+  --app-input-placeholder-foreground: #9ca3af;
+  --app-input-foreground: #1f2937;
+  --app-input-secondary-background: #f3f4f6;
+  --app-ghost-button-hover-background: rgba(0, 0, 0, 0.05);
+  --app-header-background: #f9fafb;
+  --app-list-hover-background: rgba(0, 0, 0, 0.05);
+  --app-list-active-background: #3b82f6;
+  --app-menu-background: #ffffff;
+  --app-menu-border: #e5e7eb;
+  --app-menu-foreground: #1f2937;
+  --app-tool-background: #ffffff;
+  --app-code-background: #f3f4f6;
+  --app-link-foreground: #2563eb;
+  --app-link-active-foreground: #1d4ed8;
+  --app-transparent-inner-border: rgba(0, 0, 0, 0.08);
+}
+
+/* Dark mode: ensure ChatViewer uses dark colors when .dark class is present.
+   Applied to :root so all webui CSS variable references resolve correctly. */
+:root.dark {
+  --app-primary-foreground: #e4e4e7;
+  --app-secondary-foreground: #a1a1aa;
+  --app-background: #1e1e1e;
+  --app-primary-background: #1e1e1e;
+  --app-background-secondary: #252526;
+  --app-secondary-background: #252526;
+  --app-background-tertiary: #2d2d2d;
+  --app-foreground: #e4e4e7;
+  --app-foreground-secondary: #a1a1aa;
+  --app-foreground-muted: #71717a;
+  --app-border: #3f3f46;
+  --app-primary-border-color: #3f3f46;
+  --app-input-background: #3c3c3c;
+  --app-input-border: #3f3f46;
+  --app-input-placeholder-foreground: #71717a;
+  --app-input-foreground: #e4e4e7;
+  --app-input-secondary-background: #252526;
+  --app-ghost-button-hover-background: rgba(90, 93, 94, 0.31);
+  --app-header-background: #252526;
+  --app-list-hover-background: rgba(90, 93, 94, 0.31);
+  --app-list-active-background: #094771;
+  --app-menu-background: #252526;
+  --app-menu-border: #454545;
+  --app-menu-foreground: #cccccc;
+  --app-tool-background: #1e1e1e;
+  --app-code-background: #2d2d2d;
+  --app-link-foreground: #4daafc;
+  --app-link-active-foreground: #3b95f0;
+  --app-transparent-inner-border: rgba(255, 255, 255, 0.08);
 }

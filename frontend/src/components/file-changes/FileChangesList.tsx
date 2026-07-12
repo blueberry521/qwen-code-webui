@@ -42,11 +42,11 @@ function isCodeFile(path: string): boolean {
 function FileIcon({ path }: { path: string }) {
   if (isCodeFile(path)) {
     return (
-      <CodeBracketIcon className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+      <CodeBracketIcon className="w-4 h-4 text-slate-400 dark:text-slate-400 flex-shrink-0" />
     );
   }
   return (
-    <DocumentIcon className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+    <DocumentIcon className="w-4 h-4 text-slate-400 dark:text-slate-400 flex-shrink-0" />
   );
 }
 
@@ -101,7 +101,7 @@ export function FileChangesList({
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="text-center">
-          <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
       </div>
     );
@@ -111,8 +111,8 @@ export function FileChangesList({
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 dark:border-slate-500 dark:border-t-slate-200 rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-xs text-slate-500 dark:text-slate-300">
             {t("fileChanges.loading")}
           </p>
         </div>
@@ -123,7 +123,7 @@ export function FileChangesList({
   if (files.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-4">
-        <p className="text-xs text-slate-400 dark:text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-300">
           {emptyMessage || t("fileChanges.noChanges")}
         </p>
       </div>
@@ -136,12 +136,12 @@ export function FileChangesList({
         <button
           key={file.path}
           onClick={() => onFileClick(file)}
-          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 border-b border-slate-100 dark:border-slate-800 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 border-b border-slate-100 dark:border-slate-800 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset bg-white dark:bg-slate-900"
           title={file.path}
         >
           <FileIcon path={file.path} />
           <StatusBadge status={file.status} />
-          <span className="flex-1 text-xs text-slate-600 dark:text-slate-300 truncate font-mono">
+          <span className="flex-1 text-xs text-slate-600 dark:text-slate-200 truncate font-mono">
             {truncatePath(file.path)}
           </span>
           <span className="text-xs font-mono flex-shrink-0 space-x-1">
