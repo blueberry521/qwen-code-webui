@@ -400,7 +400,7 @@ export function ChatInput({
                 isLoading && currentRequestId ? t("chat.processing") : t("chat.typeMessage")
               }
               rows={1}
-              className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 shadow-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 resize-none overflow-hidden min-h-[48px] max-h-[${UI_CONSTANTS.TEXTAREA_MAX_HEIGHT}px]`}
+              className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 shadow-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 resize-none overflow-hidden min-h-[48px] max-h-[${UI_CONSTANTS.TEXTAREA_MAX_HEIGHT}px]`}
               disabled={isLoading || disabled}
             />
             {/* Slash command suggestion popup */}
