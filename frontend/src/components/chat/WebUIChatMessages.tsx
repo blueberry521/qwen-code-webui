@@ -13,7 +13,9 @@ import {
   ChatViewer,
   type ChatViewerHandle,
 } from "@qwen-code/webui";
-import "@qwen-code/webui/styles.css";
+// NOTE: @qwen-code/webui/styles.css is imported in index.css with layer(webui)
+// to prevent its un-layered utility classes from overriding Tailwind v4 dark-mode
+// utilities (see issue #197).
 import type { AllMessage } from "../../types";
 import type { ExtendedMessage } from "../../adapters";
 import { UI_CONSTANTS } from "../../utils/constants";
@@ -21,6 +23,7 @@ import {
   adaptMessagesToWebUI,
   filterEmptyMessages,
 } from "../../adapters";
+import { useSettings } from "../../hooks/useSettings";
 
 interface WebUIChatMessagesProps {
   messages: AllMessage[];
@@ -47,6 +50,7 @@ export const WebUIChatMessages = forwardRef<WebUIChatMessagesHandle, WebUIChatMe
   const chatViewerRef = useRef<ChatViewerHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
+  const { theme } = useSettings();
 
   // Adapt messages to webui format
   const adaptedMessages = useMemo(() => {
@@ -137,7 +141,7 @@ export const WebUIChatMessages = forwardRef<WebUIChatMessagesHandle, WebUIChatMe
   return (
     <div
       ref={containerRef}
-      className={`flex-1 overflow-y-auto bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 p-3 sm:p-6 mb-3 sm:mb-6 rounded-2xl shadow-sm backdrop-blur-sm flex flex-col ${className || ""}`}
+      className={`flex-1 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 sm:p-6 mb-3 sm:mb-6 rounded-2xl shadow-sm flex flex-col ${className || ""}`}
     >
       {messages.length === 0 ? (
         <EmptyState />
@@ -150,6 +154,7 @@ export const WebUIChatMessages = forwardRef<WebUIChatMessagesHandle, WebUIChatMe
             className="webui-chat-viewer"
             emptyMessage=""
             autoScroll={false}
+            theme={theme === "dark" ? "dark" : "light"}
           />
         </>
       )}
@@ -164,15 +169,15 @@ export const WebUIChatMessages = forwardRef<WebUIChatMessagesHandle, WebUIChatMe
 function EmptyState() {
   const { t } = useTranslation();
   return (
-    <div className="flex-1 flex items-center justify-center text-center text-slate-500 dark:text-slate-400">
+    <div className="flex-1 flex items-center justify-center text-center text-slate-500 dark:text-slate-300">
       <div>
         <div className="text-6xl mb-6 opacity-60">
           <span role="img" aria-label="chat icon">
             💬
           </span>
         </div>
-        <p className="text-lg font-medium">{t("chat.startConversation")}</p>
-        <p className="text-sm mt-2 opacity-80">
+        <p className="text-lg font-medium text-slate-700 dark:text-slate-200">{t("chat.startConversation")}</p>
+        <p className="text-sm mt-2 text-slate-500 dark:text-slate-400">
           {t("chat.typeToBegin")}
         </p>
       </div>

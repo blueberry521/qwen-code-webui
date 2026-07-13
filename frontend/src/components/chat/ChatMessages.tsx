@@ -120,7 +120,7 @@ export const ChatMessages = forwardRef<ChatMessagesHandle, ChatMessagesProps>(
   return (
     <div
       ref={messagesContainerRef}
-      className="flex-1 overflow-y-auto bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 p-3 sm:p-6 mb-3 sm:mb-6 rounded-2xl shadow-sm backdrop-blur-sm flex flex-col"
+      className="flex-1 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 sm:p-6 mb-3 sm:mb-6 rounded-2xl shadow-sm flex flex-col"
     >
       {messages.length === 0 ? (
         <EmptyState />
@@ -141,15 +141,15 @@ export const ChatMessages = forwardRef<ChatMessagesHandle, ChatMessagesProps>(
 function EmptyState() {
   const { t } = useTranslation();
   return (
-    <div className="flex-1 flex items-center justify-center text-center text-slate-500 dark:text-slate-400">
+    <div className="flex-1 flex items-center justify-center text-center text-slate-500 dark:text-slate-300">
       <div>
         <div className="text-6xl mb-6 opacity-60">
           <span role="img" aria-label="chat icon">
             💬
           </span>
         </div>
-        <p className="text-lg font-medium">{t("chat.startConversation")}</p>
-        <p className="text-sm mt-2 opacity-80">
+        <p className="text-lg font-medium text-slate-700 dark:text-slate-200">{t("chat.startConversation")}</p>
+        <p className="text-sm mt-2 text-slate-500 dark:text-slate-400">
           {t("chat.typeToBegin")}
         </p>
       </div>

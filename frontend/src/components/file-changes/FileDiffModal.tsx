@@ -259,7 +259,7 @@ export function FileDiffModal({
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-center py-12">
-                      <p className="text-sm text-red-500">{error}</p>
+                      <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
                     </div>
                   ) : viewMode === "diff" && diffData ? (
                     <div className="text-xs">
@@ -292,7 +292,7 @@ export function FileDiffModal({
                     </pre>
                   ) : (
                     <div className="flex items-center justify-center py-12">
-                      <p className="text-sm text-slate-400">
+                      <p className="text-sm text-slate-500 dark:text-slate-300">
                         {t("fileChanges.diff.noDiff")}
                       </p>
                     </div>

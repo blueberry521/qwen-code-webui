@@ -400,7 +400,7 @@ export function ChatInput({
                 isLoading && currentRequestId ? t("chat.processing") : t("chat.typeMessage")
               }
               rows={1}
-              className={`w-full px-4 py-3 bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm shadow-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 resize-none overflow-hidden min-h-[48px] max-h-[${UI_CONSTANTS.TEXTAREA_MAX_HEIGHT}px]`}
+              className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 shadow-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 resize-none overflow-hidden min-h-[48px] max-h-[${UI_CONSTANTS.TEXTAREA_MAX_HEIGHT}px]`}
               disabled={isLoading || disabled}
             />
             {/* Slash command suggestion popup */}
@@ -444,22 +444,22 @@ export function ChatInput({
       </form>
 
       {/* Permission mode status bar */}
-      <div className="w-full px-4 py-1 text-xs text-slate-600 dark:text-slate-400 font-mono text-left flex items-center">
+      <div className="w-full px-4 py-1 text-xs text-slate-600 dark:text-slate-300 font-mono text-left flex items-center">
         <button
           type="button"
           onClick={() =>
             onPermissionModeChange(getNextPermissionMode(permissionMode))
           }
-          className="inline-flex items-center hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+          className="inline-flex items-center hover:text-slate-800 dark:hover:text-slate-100 transition-colors cursor-pointer"
           title={`${t("chat.clickToCycle")} (Ctrl/Cmd+Shift+Y)`}
         >
           {getPermissionModeIndicator(permissionMode)}
         </button>
         {selectedModelName && (
           <>
-            <span className="mx-3 text-slate-300 dark:text-slate-600">|</span>
-            <span className="text-slate-500 dark:text-slate-400">
-              <span className="text-slate-600 dark:text-slate-300">📖</span>
+            <span className="mx-3 text-slate-300 dark:text-slate-500">|</span>
+            <span className="text-slate-500 dark:text-slate-300">
+              <span className="text-slate-600 dark:text-slate-200">📖</span>
               {" "}
               {selectedModelName}
             </span>
@@ -467,8 +467,8 @@ export function ChatInput({
         )}
         {tokenUsage && tokenUsage.promptTokens > 0 && (
           <>
-            <span className="mx-3 text-slate-300 dark:text-slate-600">|</span>
-            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+            <span className="mx-3 text-slate-300 dark:text-slate-500">|</span>
+            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-300">
               {contextWindowSize ? (
                 <>
                   <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">

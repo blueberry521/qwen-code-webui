@@ -10,11 +10,11 @@ export function SettingsButton({ onClick }: SettingsButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="p-2 rounded-lg bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow-md"
+      className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 shadow-sm hover:shadow-md"
       aria-label={t("settings.open")}
       title={t("chat.settings")}
     >
-      <CogIcon className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+      <CogIcon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
     </button>
   );
 }

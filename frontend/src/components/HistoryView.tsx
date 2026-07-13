@@ -58,7 +58,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">
+          <p className="text-slate-600 dark:text-slate-300">
             {!encodedName ? t("history.loadingProject") : t("history.loadingConversations")}
           </p>
         </div>
@@ -88,7 +88,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
           <h2 className="text-slate-800 dark:text-slate-100 text-xl font-semibold mb-2">
             {t("history.errorLoadingHistory")}
           </h2>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+          <p className="text-slate-600 dark:text-slate-300 text-sm mb-4">
             {error}
           </p>
         </div>
@@ -102,7 +102,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
         <div className="text-center">
           <div className="w-16 h-16 mx-auto mb-4 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-slate-400 dark:text-slate-500"
+              className="w-8 h-8 text-slate-400 dark:text-slate-300"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -118,7 +118,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
           <h2 className="text-slate-800 dark:text-slate-100 text-xl font-semibold mb-2">
             {t("history.noConversations")}
           </h2>
-          <p className="text-slate-600 dark:text-slate-400 text-sm max-w-sm">
+          <p className="text-slate-600 dark:text-slate-300 text-sm max-w-sm">
             {t("history.startChatting")}
           </p>
         </div>
@@ -145,7 +145,7 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
                     {new Date(conversation.startTime).toLocaleString()} •{" "}
                     {conversation.messageCount} {t("history.messages")}
                   </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 line-clamp-2">
+                  <p className="text-sm text-slate-600 dark:text-slate-200 mt-2 line-clamp-2">
                     {conversation.lastMessagePreview}
                   </p>
                 </div>

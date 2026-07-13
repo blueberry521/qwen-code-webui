@@ -26,10 +26,10 @@ export function ToggleWebUIComponentsButton({
   return (
     <button
       onClick={handleClick}
-      className={`p-2 rounded-lg border transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow-md ${
+      className={`p-2 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
         isEnabled
           ? "bg-blue-600 dark:bg-blue-600 border-blue-700 dark:border-blue-500 scale-105"
-          : "bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800"
+          : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800"
       }`}
       aria-label={t("chat.toggleComponents", { status: isEnabled ? t("chat.enabled") : t("chat.disabled") })}
       title={t("chat.toggleComponents", { status: isEnabled ? t("chat.enabled") : t("chat.disabled") })}
@@ -38,7 +38,7 @@ export function ToggleWebUIComponentsButton({
         className={`w-4 h-4 ${
           isEnabled
             ? "text-white"
-            : "text-slate-600 dark:text-slate-400"
+            : "text-slate-600 dark:text-slate-300"
         }`}
       />
     </button>

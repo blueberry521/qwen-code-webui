@@ -58,7 +58,7 @@ export function ChatMessageComponent({ message }: ChatMessageComponentProps) {
       <div className="mb-2 flex items-center justify-between gap-4">
         <div
           className={`text-xs font-semibold opacity-90 ${
-            isUser ? "text-blue-100" : "text-slate-600 dark:text-slate-400"
+            isUser ? "text-blue-100" : "text-slate-600 dark:text-slate-300"
           }`}
         >
           {isUser ? "User" : "Qwen"}
@@ -66,7 +66,7 @@ export function ChatMessageComponent({ message }: ChatMessageComponentProps) {
         <TimestampComponent
           timestamp={message.timestamp}
           className={`text-xs opacity-70 ${
-            isUser ? "text-blue-200" : "text-slate-500 dark:text-slate-500"
+            isUser ? "text-blue-200" : "text-slate-500 dark:text-slate-400"
           }`}
         />
       </div>
@@ -490,7 +490,7 @@ export function LoadingComponent() {
       alignment="left"
       colorScheme="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100"
     >
-      <div className="text-xs font-semibold mb-2 opacity-90 text-slate-600 dark:text-slate-400">
+      <div className="text-xs font-semibold mb-2 opacity-90 text-slate-600 dark:text-slate-300">
         Qwen
       </div>
       <div className="flex items-center gap-2 text-sm">

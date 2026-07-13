@@ -64,7 +64,7 @@ export function ModelSelector({
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed max-w-[260px]"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 cursor-not-allowed max-w-[260px]"
           aria-label={emptyReason || t("chat.noModelsAvailable")}
           disabled
           title={emptyReason || t("chat.noModelsAvailable")}
@@ -82,7 +82,7 @@ export function ModelSelector({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow-md cursor-pointer max-w-[200px]"
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer max-w-[200px]"
         aria-label={t("chat.selectModel")}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -90,7 +90,7 @@ export function ModelSelector({
       >
         <span className="truncate">{selectedModelName}</span>
         <ChevronDownIcon
-          className={`w-3.5 h-3.5 text-slate-500 dark:text-slate-400 flex-shrink-0 transition-transform duration-200 ${
+          className={`w-3.5 h-3.5 text-slate-500 dark:text-slate-300 flex-shrink-0 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
         />

@@ -30,7 +30,7 @@ export function FileChangesHeader({
       : t("fileChanges.openInVSCode");
 
   return (
-    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
+    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex-shrink-0">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           {t("fileChanges.title")}
