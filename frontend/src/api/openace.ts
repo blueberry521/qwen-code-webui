@@ -803,7 +803,7 @@ export function createRemoteSessionStreamWithReconnect(
     };
 
     es.onmessage = (event) => {
-      resetStallTimer();  // Reset stall timer on every message
+      resetStallTimer();  // Reset stall timer on every message (incl. keepalive)
       if (event.data === "[DONE]") {
         console.debug("[SSE] Received [DONE]");
         es.close();
@@ -813,6 +813,13 @@ export function createRemoteSessionStreamWithReconnect(
         }
         onDone();
         return;
+      }
+      // Backend keepalive heartbeat — only keeps the stall timer alive above;
+      // it carries no session output, so don't forward it to onLine.
+      try {
+        if (JSON.parse(event.data)?.type === "keepalive") return;
+      } catch {
+        // Not JSON — treat as a regular SSE line.
       }
       onLine(event.data);
     };

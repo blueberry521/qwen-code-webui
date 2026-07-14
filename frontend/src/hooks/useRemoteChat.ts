@@ -544,5 +544,6 @@ export function useRemoteChat(options?: RemoteChatOptions) {
     resumeSession,
     sendPermissionResponse: handlePermissionResponse,
     error,
+    sseState,
   };
 }

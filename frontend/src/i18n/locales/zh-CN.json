@@ -82,6 +82,8 @@
     "remoteEndedCreate": "远程会话已结束，请创建新会话",
     "remoteReconnectFailed": "远程会话连接断开，请重新连接",
     "reconnect": "重新连接",
+    "sseReconnecting": "正在重新连接…",
+    "sseDisconnected": "已断开连接",
     "stop": "停止 (ESC)",
     "backToProjects": "返回项目选择",
     "viewHistory": "查看对话历史",
