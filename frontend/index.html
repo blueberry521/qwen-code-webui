@@ -6,24 +6,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Qwen Code Web UI</title>
     <script>
-      // Prevent flash of unstyled content by setting theme class early
+      // Prevent flash of unstyled content (FOUC) by setting theme class and
+      // background color before any rendering occurs.
       (function () {
         const storedTheme = localStorage.getItem("qwen-code-webui-theme");
         let theme = null;
         try {
           theme = storedTheme ? JSON.parse(storedTheme) : null;
         } catch {
-          // If parsing fails, fall back to null
           theme = null;
         }
-        
-        if (
+
+        // Check URL parameter for theme override (for iframe/embedded mode)
+        const urlParams = new URLSearchParams(window.location.search);
+        const themeParam = urlParams.get("theme");
+        if (themeParam === "dark" || themeParam === "light") {
+          theme = themeParam;
+        }
+
+        const isDark =
           theme === "dark" ||
-          (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches)
-        ) {
-          document.documentElement.classList.add("dark");
+          (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+        const root = document.documentElement;
+        if (isDark) {
+          root.classList.add("dark");
+          // Set background color immediately to prevent white flash.
+          // This inline style will be overridden by Tailwind CSS once loaded.
+          root.style.backgroundColor = "#0f172a";
+          root.style.colorScheme = "dark";
         } else {
-          document.documentElement.classList.remove("dark");
+          root.classList.remove("dark");
+          root.style.backgroundColor = "#ffffff";
+          root.style.colorScheme = "light";
         }
       })();
     </script>
