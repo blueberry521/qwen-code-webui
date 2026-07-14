@@ -81,6 +81,8 @@
     "remoteEndedCreate": "リモートセッションが終了しました。新しいセッションを作成してください。",
     "remoteReconnectFailed": "リモートセッションが切断されました。再接続してください。",
     "reconnect": "再接続",
+    "sseReconnecting": "再接続中…",
+    "sseDisconnected": "切断されました",
     "stop": "停止（ESC）",
     "backToProjects": "プロジェクト選択に戻る",
     "viewHistory": "会話履歴を表示",

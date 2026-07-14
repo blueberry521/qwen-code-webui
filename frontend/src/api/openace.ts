@@ -707,33 +707,174 @@ export async function resumeRemoteSession(
   return response.json();
 }
 
+export type SSEConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+
+export interface SSEOptions {
+  onLine: (line: string) => void;
+  onError: (err: Event) => void;
+  onDone: () => void;
+  onStateChange?: (state: SSEConnectionState) => void;
+  maxRetries?: number;
+  initialRetryDelay?: number;
+  maxRetryDelay?: number;
+  stallTimeout?: number;  // Stall detection timeout in ms (Issue #195)
+}
+
 export function createRemoteSessionStream(
   sessionId: string,
   onLine: (line: string) => void,
   onError: (err: Event) => void,
   onDone: () => void,
 ): EventSource {
+  // Legacy API - no reconnect, just wrap the new function
+  return createRemoteSessionStreamWithReconnect(sessionId, {
+    onLine,
+    onError,
+    onDone,
+    maxRetries: 0, // No reconnect for legacy API
+  });
+}
+
+export function createRemoteSessionStreamWithReconnect(
+  sessionId: string,
+  options: SSEOptions,
+): EventSource {
+  const {
+    onLine,
+    onError,
+    onDone,
+    onStateChange,
+    maxRetries = 5,
+    initialRetryDelay = 1000,
+    maxRetryDelay = 30000,
+    stallTimeout = 35000,  // 35s: backend heartbeat is 10s, use 3.5x to avoid false stall detection
+  } = options;
+
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
-  console.log("[SSE] Connecting to:", url);
-  const es = new EventSource(url);
-  es.onopen = () => {
-    console.log("[SSE] Connection opened");
-  };
-  es.onmessage = (event) => {
-    if (event.data === "[DONE]") {
-      console.log("[SSE] Received [DONE]");
-      es.close();
-      onDone();
-      return;
+  let retryCount = 0;
+  let currentDelay = initialRetryDelay;
+  let es: EventSource;
+  let reconnectTimer: number | null = null;
+  let stallTimer: number | null = null;  // Stall detection timer
+
+  // Shared reconnect scheduler to avoid code duplication
+  const scheduleReconnect = (reason: string) => {
+    if (retryCount < maxRetries && maxRetries > 0) {
+      retryCount++;
+      console.debug(`[SSE] Reconnecting after ${reason}...`);
+      onStateChange?.('reconnecting');
+      reconnectTimer = window.setTimeout(() => {
+        currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
+        connect();
+      }, currentDelay);
+    } else {
+      console.debug(`[SSE] Max retries exceeded after ${reason}, disconnected`);
+      onStateChange?.('disconnected');
+      onError(new Event('error'));
     }
-    onLine(event.data);
   };
-  es.onerror = (e) => {
-    console.error("[SSE] Error, readyState:", es.readyState, e);
-    es.close();
-    onError(e);
+
+  // Stall detection: reset timer on every data received (Issue #195)
+  const resetStallTimer = () => {
+    if (stallTimer !== null) {
+      window.clearTimeout(stallTimer);
+    }
+    stallTimer = window.setTimeout(() => {
+      console.warn("[SSE] Stall detected, no data for", stallTimeout, "ms");
+      if (es.readyState === EventSource.OPEN) {
+        es.close();
+        scheduleReconnect('stall');
+      }
+    }, stallTimeout);
   };
-  return es;
+
+  const connect = () => {
+    console.debug("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
+    onStateChange?.(retryCount > 0 ? 'reconnecting' : 'connected');
+
+    es = new EventSource(url);
+
+    es.onopen = () => {
+      console.debug("[SSE] Connection opened");
+      retryCount = 0;
+      currentDelay = initialRetryDelay;
+      onStateChange?.('connected');
+      resetStallTimer();  // Start stall detection on connection open
+    };
+
+    es.onmessage = (event) => {
+      resetStallTimer();  // Reset stall timer on every message (incl. keepalive)
+      if (event.data === "[DONE]") {
+        console.debug("[SSE] Received [DONE]");
+        es.close();
+        if (stallTimer !== null) {
+          window.clearTimeout(stallTimer);
+          stallTimer = null;
+        }
+        onDone();
+        return;
+      }
+      // Backend keepalive heartbeat — only keeps the stall timer alive above;
+      // it carries no session output, so don't forward it to onLine.
+      try {
+        if (JSON.parse(event.data)?.type === "keepalive") return;
+      } catch {
+        // Not JSON — treat as a regular SSE line.
+      }
+      onLine(event.data);
+    };
+
+    es.onerror = (e) => {
+      console.error("[SSE] Error, readyState:", es.readyState, e);
+      if (stallTimer !== null) {
+        window.clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+      es.close();
+      scheduleReconnect('error');
+    };
+  };
+
+  connect();
+
+  // Return a wrapped EventSource that also clears reconnect timer on close
+  // Note: onopen/onmessage/onerror are null because handlers are set directly
+  // on the internal `es` in connect(). These null properties exist only for
+  // type compatibility with EventSource interface.
+  const wrappedEs = {
+    close: () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (stallTimer !== null) {
+        window.clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+      es.close();
+    },
+    get readyState() {
+      return es.readyState;
+    },
+    get url() {
+      return es.url;
+    },
+    // Dynamic proxy to current EventSource instance (not bound to old es)
+    addEventListener: (...args: Parameters<EventSource['addEventListener']>) => {
+      es.addEventListener(...args);
+    },
+    removeEventListener: (...args: Parameters<EventSource['removeEventListener']>) => {
+      es.removeEventListener(...args);
+    },
+    dispatchEvent: (event: Event) => {
+      return es.dispatchEvent(event);
+    },
+    onopen: null as ((this: EventSource, ev: Event) => any) | null,
+    onmessage: null as ((this: EventSource, ev: MessageEvent) => any) | null,
+    onerror: null as ((this: EventSource, ev: Event) => any) | null,
+  } as EventSource;
+
+  return wrappedEs;
 }
 
 // -------------------------------------------------------

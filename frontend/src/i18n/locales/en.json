@@ -82,6 +82,8 @@
     "remoteEndedCreate": "Remote session has ended. Please create a new session.",
     "remoteReconnectFailed": "Remote session disconnected. Please reconnect.",
     "reconnect": "Reconnect",
+    "sseReconnecting": "Reconnecting…",
+    "sseDisconnected": "Disconnected",
     "stop": "Stop (ESC)",
     "backToProjects": "Back to project selection",
     "viewHistory": "View conversation history",

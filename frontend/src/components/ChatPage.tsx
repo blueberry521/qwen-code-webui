@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeftIcon, DocumentTextIcon, ServerIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, ChevronLeftIcon, DocumentTextIcon, ServerIcon } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
 import type {
   ChatRequest,
@@ -1616,6 +1616,26 @@ export function ChatPage() {
                     }`}
                     title={`Status: ${remoteChat.session.status}`}
                   />
+                </div>
+              )}
+              {/* SSE connection state (Issue #195 P2) */}
+              {isRemoteWorkspace && remoteChat.session && remoteChat.sseState === "reconnecting" && (
+                <div className="flex items-center gap-1.5 mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                  <span>{t("chat.sseReconnecting")}</span>
+                </div>
+              )}
+              {isRemoteWorkspace && remoteChat.session && remoteChat.sseState === "disconnected" && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-red-500 dark:text-red-400">
+                  <span>{t("chat.sseDisconnected")}</span>
+                  {remoteMachineId && (
+                    <button
+                      onClick={() => remoteChat.reconnect(remoteMachineId, workingDirectory || "", selectedModel || undefined)}
+                      className="px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                    >
+                      {t("chat.reconnect")}
+                    </button>
+                  )}
                 </div>
               )}
               {/* Remote session error */}
