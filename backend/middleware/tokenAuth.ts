@@ -78,9 +78,17 @@ async function validateTokenV2(
     return { valid: false };
   }
 
-  // Check TTL (token expiration)
+  // Check timestamp validity (TTL and future timestamp)
   const currentTimestamp = Math.floor(Date.now() / 1000);
   const tokenAge = currentTimestamp - timestampNum;
+
+  // Reject tokens with future timestamp (matching Open-ACE behavior)
+  if (tokenAge < 0) {
+    logger.app.warn("Token timestamp is in the future");
+    return { valid: false };
+  }
+
+  // Check TTL (token expiration)
   if (tokenAge > TOKEN_TTL_SECONDS) {
     logger.app.warn(
       "Token expired: age={age}s, max={ttl}s",

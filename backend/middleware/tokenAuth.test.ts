@@ -303,4 +303,29 @@ describe("createTokenAuthMiddleware", () => {
     expect(res.status).toBe(401);
     expect(await res.text()).toContain("Invalid token");
   });
+
+  it("should reject v2 token with future timestamp", async () => {
+    const secret = "test-secret-key";
+    const userId = 1;
+    const port = 3101;
+    // Timestamp 1 hour in the future
+    const timestamp = Math.floor(Date.now() / 1000) + 3600;
+    const randomPart = "abc123def456";
+
+    const futureToken = await generateTokenV2(
+      userId,
+      port,
+      timestamp,
+      randomPart,
+      secret
+    );
+
+    const app = new Hono();
+    app.use("*", createTokenAuthMiddleware(secret));
+    app.get("/test", (c) => c.text("OK"));
+
+    const res = await app.request(`/test?token=${futureToken}`);
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain("Invalid token");
+  });
 });
