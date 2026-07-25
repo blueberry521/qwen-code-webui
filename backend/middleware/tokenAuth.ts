@@ -4,8 +4,15 @@
  * When --token-secret is configured, this middleware validates tokens
  * from URL query parameters to ensure requests come from authorized Open-ACE users.
  *
- * Token format: {user_id}:{port}:{random}:{signature}
- * Signature: SHA256({user_id}:{port}:{random}:{secret}).hexdigest()[:16]
+ * Supports two token formats:
+ *
+ * v2 format (recommended): v2:{user_id}:{port}:{timestamp}:{random}:{signature}
+ *   - Includes timestamp for TTL validation (30 minutes default)
+ *   - Signature: SHA256(v2:{user_id}:{port}:{timestamp}:{random}:{secret})[:16]
+ *
+ * v1 format (legacy): {user_id}:{port}:{random}:{signature}
+ *   - No TTL support
+ *   - Signature: SHA256({user_id}:{port}:{random}:{secret})[:16]
  *
  * If --token-secret is not configured, the middleware skips validation,
  * allowing standalone usage without Open-ACE integration.
@@ -35,7 +42,110 @@ async function sha256Hex(data: string): Promise<string> {
 }
 
 /**
+ * Token TTL in seconds (30 minutes, matching Open-ACE default)
+ */
+const TOKEN_TTL_SECONDS = 1800;
+
+/**
+ * Validates a v2 format token with TTL support
+ *
+ * @param parts Token parts (already split by ":")
+ * @param secret Secret key for signature verification
+ * @returns True if token is valid, false otherwise
+ */
+async function validateTokenV2(
+  parts: string[],
+  secret: string
+): Promise<{ valid: boolean; userId?: string }> {
+  // v2 format: v2:{user_id}:{port}:{timestamp}:{random}:{signature}
+  if (parts.length !== 6) {
+    logger.app.warn("Invalid v2 token format: expected 6 parts");
+    return { valid: false };
+  }
+
+  const [version, userId, port, timestamp, randomPart, signature] = parts;
+
+  // Verify version prefix
+  if (version !== "v2") {
+    logger.app.warn("Invalid v2 token: missing v2 prefix");
+    return { valid: false };
+  }
+
+  // Validate timestamp is a number
+  const timestampNum = parseInt(timestamp, 10);
+  if (isNaN(timestampNum)) {
+    logger.app.warn("Invalid v2 token: invalid timestamp");
+    return { valid: false };
+  }
+
+  // Check TTL (token expiration)
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const tokenAge = currentTimestamp - timestampNum;
+  if (tokenAge > TOKEN_TTL_SECONDS) {
+    logger.app.warn(
+      "Token expired: age={age}s, max={ttl}s",
+      { age: tokenAge, ttl: TOKEN_TTL_SECONDS }
+    );
+    return { valid: false };
+  }
+
+  // Compute expected signature using same algorithm as Open-ACE
+  // Signature: SHA256(v2:{user_id}:{port}:{timestamp}:{random}:{secret})[:16]
+  const payload = `v2:${userId}:${port}:${timestamp}:${randomPart}`;
+  const hexHash = await sha256Hex(`${payload}:${secret}`);
+  const expectedSignature = hexHash.slice(0, 16);
+
+  if (signature !== expectedSignature) {
+    logger.app.warn("v2 token signature mismatch");
+    return { valid: false };
+  }
+
+  logger.app.debug("v2 token validated successfully for user {userId}", {
+    userId,
+  });
+  return { valid: true, userId };
+}
+
+/**
+ * Validates a v1 format token (legacy, no TTL)
+ *
+ * @param parts Token parts (already split by ":")
+ * @param secret Secret key for signature verification
+ * @returns True if token is valid, false otherwise
+ */
+async function validateTokenV1(
+  parts: string[],
+  secret: string
+): Promise<{ valid: boolean; userId?: string }> {
+  // v1 format: {user_id}:{port}:{random}:{signature}
+  if (parts.length !== 4) {
+    logger.app.warn("Invalid v1 token format: expected 4 parts");
+    return { valid: false };
+  }
+
+  const [userId, port, randomPart, signature] = parts;
+
+  // Compute expected signature using same algorithm as Open-ACE
+  // Signature: SHA256({user_id}:{port}:{random}:{secret})[:16]
+  const dataToSign = `${userId}:${port}:${randomPart}:${secret}`;
+  const hexHash = await sha256Hex(dataToSign);
+  const expectedSignature = hexHash.slice(0, 16);
+
+  if (signature !== expectedSignature) {
+    logger.app.warn("v1 token signature mismatch");
+    return { valid: false };
+  }
+
+  logger.app.debug("v1 token validated successfully for user {userId}", {
+    userId,
+  });
+  return { valid: true, userId };
+}
+
+/**
  * Validates a token against the expected signature
+ *
+ * Supports both v2 (with TTL) and v1 (legacy) formats.
  *
  * @param token Token string to validate
  * @param secret Secret key for signature verification
@@ -44,27 +154,16 @@ async function sha256Hex(data: string): Promise<string> {
 async function validateToken(token: string, secret: string): Promise<boolean> {
   try {
     const parts = token.split(":");
-    if (parts.length !== 4) {
-      logger.app.warn("Invalid token format: expected 4 parts");
-      return false;
+
+    // v2 format: starts with "v2:" and has 6 parts
+    if (token.startsWith("v2:")) {
+      const result = await validateTokenV2(parts, secret);
+      return result.valid;
     }
 
-    const [userId, port, randomPart, signature] = parts;
-
-    // Compute expected signature using same algorithm as Open-ACE
-    const dataToSign = `${userId}:${port}:${randomPart}:${secret}`;
-    const hexHash = await sha256Hex(dataToSign);
-    const expectedSignature = hexHash.slice(0, 16);
-
-    if (signature !== expectedSignature) {
-      logger.app.warn("Token signature mismatch");
-      return false;
-    }
-
-    logger.app.debug("Token validated successfully for user {userId}", {
-      userId,
-    });
-    return true;
+    // v1 format: 4 parts (legacy, no TTL)
+    const result = await validateTokenV1(parts, secret);
+    return result.valid;
   } catch (error) {
     logger.app.error("Token validation error: {error}", { error });
     return false;
