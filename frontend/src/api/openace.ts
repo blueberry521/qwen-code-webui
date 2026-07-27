@@ -6,7 +6,66 @@
  */
 
 import type { ModelConfig } from "@shared/types";
-import { getToken, getOpenAceUrl } from "../utils/token";
+import { getToken, getOpenAceUrl, notifyTokenExpired, setupTokenRefreshListener } from "../utils/token";
+
+// Setup listener for token refresh from parent window
+setupTokenRefreshListener();
+
+// Track if we're waiting for token refresh
+let isWaitingForTokenRefresh = false;
+
+/**
+ * Wait for token refresh from parent window
+ * Returns a promise that resolves when token is refreshed
+ */
+function waitForTokenRefresh(): Promise<void> {
+  if (!isWaitingForTokenRefresh) {
+    isWaitingForTokenRefresh = true;
+    notifyTokenExpired();
+  }
+
+  return new Promise((resolve) => {
+    // Also resolve on 'token-refreshed' event
+    const handler = () => {
+      isWaitingForTokenRefresh = false;
+      window.removeEventListener('token-refreshed', handler);
+      resolve();
+    };
+    window.addEventListener('token-refreshed', handler);
+
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      isWaitingForTokenRefresh = false;
+      window.removeEventListener('token-refreshed', handler);
+      resolve();
+    }, 10000);
+  });
+}
+
+/**
+ * Fetch with automatic token refresh on 401
+ */
+async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise<Response> {
+  const response = await fetch(url, options);
+
+  // If 401 Unauthorized, try to refresh token and retry once
+  if (response.status === 401 && getToken()) {
+    console.log("[API] Got 401, waiting for token refresh...");
+    await waitForTokenRefresh();
+
+    // Rebuild URL with new token
+    const newToken = getToken();
+    if (newToken) {
+      // Update URL with new token
+      const urlObj = new URL(url, window.location.origin);
+      urlObj.searchParams.set('token', newToken);
+      console.log("[API] Retrying request with refreshed token");
+      return fetch(urlObj.toString(), options);
+    }
+  }
+
+  return response;
+}
 
 // Open-ACE API base URL - can be configured via environment or detected from URL
 const getOpenAceBaseUrl = (): string => {
@@ -149,18 +208,18 @@ export interface SessionModelsResponse {
  */
 export async function fetchOpenAceProjects(): Promise<OpenAceProjectsResponse> {
   const url = buildOpenAceUrl("/api/projects");
-  
-  const response = await fetch(url, {
+
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
     },
   });
-  
+
   if (!response.ok) {
     throw new Error(`Failed to fetch projects: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -171,15 +230,15 @@ export async function createOpenAceProject(
   request: CreateProjectRequest
 ): Promise<CreateProjectResponse> {
   const url = buildOpenAceUrl("/api/projects");
-  
-  const response = await fetch(url, {
+
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Failed to create project: ${response.statusText}`);
@@ -444,7 +503,7 @@ export async function createRemoteSession(
 ): Promise<{ success: boolean; session: RemoteSession }> {
   const url = buildOpenAceUrl("/api/remote/sessions");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -479,7 +538,7 @@ export async function sendRemoteMessage(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/chat`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

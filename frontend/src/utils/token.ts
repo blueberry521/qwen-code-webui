@@ -91,3 +91,38 @@ export function clearToken(): void {
   sessionStorage.removeItem(TOKEN_STORAGE_KEY);
   sessionStorage.removeItem(OPENACE_URL_STORAGE_KEY);
 }
+
+/**
+ * Update the stored token (called from parent window via postMessage)
+ */
+export function setToken(newToken: string): void {
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, newToken);
+  console.log("[Token] Token updated from parent window");
+}
+
+/**
+ * Notify parent window about 401 error (token expired)
+ * Parent will refresh token and send back new token
+ */
+export function notifyTokenExpired(): void {
+  if (window.parent !== window) {
+    console.log("[Token] Notifying parent about token expiration");
+    window.parent.postMessage({ type: 'qwen-code-token-expired' }, '*');
+  }
+}
+
+/**
+ * Listen for token refresh from parent window
+ */
+export function setupTokenRefreshListener(): void {
+  window.addEventListener('message', (event: MessageEvent) => {
+    if (event.data?.type === 'openace-token-refreshed') {
+      const newToken = event.data.token;
+      if (newToken) {
+        setToken(newToken);
+        // Dispatch custom event so app can retry failed requests
+        window.dispatchEvent(new CustomEvent('token-refreshed', { detail: { token: newToken } }));
+      }
+    }
+  });
+}
