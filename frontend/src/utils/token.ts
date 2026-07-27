@@ -85,6 +85,21 @@ export function addTokenToUrl(url: string): string {
 }
 
 /**
+ * Replace or add token parameter in a URL
+ * Useful for SSE reconnection with refreshed token
+ */
+export function replaceTokenInUrl(url: string, newToken: string): string {
+  try {
+    const urlObj = new URL(url, window.location.origin);
+    urlObj.searchParams.set('token', newToken);
+    return urlObj.toString();
+  } catch {
+    // If URL parsing fails, return original URL
+    return url;
+  }
+}
+
+/**
  * Clear the stored token and openace_url (for logout or session end)
  */
 export function clearToken(): void {
@@ -101,25 +116,116 @@ export function setToken(newToken: string): void {
 }
 
 /**
+ * Get the allowed origin for postMessage communication
+ * Uses the parent window's origin when in iframe, or openace_url from URL params
+ */
+function getAllowedOrigin(): string {
+  // First try openace_url parameter if available
+  const openaceUrl = getOpenAceUrl();
+  if (openaceUrl) {
+    try {
+      return new URL(openaceUrl).origin;
+    } catch {
+      // Invalid URL, fall through
+    }
+  }
+
+  // Try to get parent origin (will work for same-origin iframes)
+  if (window.parent !== window) {
+    try {
+      return window.parent.location.origin;
+    } catch {
+      // Cross-origin iframe - try referrer
+      if (document.referrer) {
+        try {
+          return new URL(document.referrer).origin;
+        } catch {
+          // Invalid referrer
+        }
+      }
+    }
+  }
+
+  // Fallback to current origin (for standalone mode)
+  return window.location.origin;
+}
+
+/**
  * Notify parent window about 401 error (token expired)
  * Parent will refresh token and send back new token
  */
 export function notifyTokenExpired(): void {
   if (window.parent !== window) {
+    const targetOrigin = getAllowedOrigin();
     console.log("[Token] Notifying parent about token expiration");
-    window.parent.postMessage({ type: 'qwen-code-token-expired' }, '*');
+    window.parent.postMessage({ type: 'qwen-code-token-expired' }, targetOrigin);
   }
+}
+
+// Shared state for token refresh waiting (used by both API and SSE)
+let isTokenRefreshPending = false;
+let refreshWaiters: Array<() => void> = [];
+
+/**
+ * Notify parent about token expiration and wait for refresh
+ * This function is shared between API requests and SSE to prevent duplicate notifications
+ */
+export function notifyAndWaitForTokenRefresh(): Promise<void> {
+  if (!isTokenRefreshPending) {
+    isTokenRefreshPending = true;
+    notifyTokenExpired();
+  }
+
+  return new Promise((resolve) => {
+    refreshWaiters.push(resolve);
+
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      const index = refreshWaiters.indexOf(resolve);
+      if (index !== -1) {
+        refreshWaiters.splice(index, 1);
+      }
+      resolve();
+    }, 10000);
+  });
+}
+
+/**
+ * Resolve all pending token refresh waiters
+ * Called when token-refreshed event is received
+ */
+function resolveTokenRefreshWaiters(): void {
+  isTokenRefreshPending = false;
+  const waiters = refreshWaiters;
+  refreshWaiters = [];
+  waiters.forEach(resolve => resolve());
 }
 
 /**
  * Listen for token refresh from parent window
+ * Safe to call multiple times - only sets up listener once
  */
+let listenerSetup = false;
 export function setupTokenRefreshListener(): void {
+  if (listenerSetup) return;
+  listenerSetup = true;
+
+  // Cache allowed origin for validation
+  const allowedOrigin = getAllowedOrigin();
+
   window.addEventListener('message', (event: MessageEvent) => {
+    // Validate message origin to prevent malicious messages
+    if (event.origin !== allowedOrigin && event.origin !== window.location.origin) {
+      console.warn("[Token] Ignoring message from untrusted origin:", event.origin);
+      return;
+    }
+
     if (event.data?.type === 'openace-token-refreshed') {
       const newToken = event.data.token;
       if (newToken) {
         setToken(newToken);
+        // Resolve all pending refresh waiters
+        resolveTokenRefreshWaiters();
         // Dispatch custom event so app can retry failed requests
         window.dispatchEvent(new CustomEvent('token-refreshed', { detail: { token: newToken } }));
       }

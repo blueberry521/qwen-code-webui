@@ -6,41 +6,10 @@
  */
 
 import type { ModelConfig } from "@shared/types";
-import { getToken, getOpenAceUrl, notifyTokenExpired, setupTokenRefreshListener } from "../utils/token";
+import { getToken, getOpenAceUrl, notifyAndWaitForTokenRefresh, setupTokenRefreshListener, replaceTokenInUrl } from "../utils/token";
 
 // Setup listener for token refresh from parent window
 setupTokenRefreshListener();
-
-// Track if we're waiting for token refresh
-let isWaitingForTokenRefresh = false;
-
-/**
- * Wait for token refresh from parent window
- * Returns a promise that resolves when token is refreshed
- */
-function waitForTokenRefresh(): Promise<void> {
-  if (!isWaitingForTokenRefresh) {
-    isWaitingForTokenRefresh = true;
-    notifyTokenExpired();
-  }
-
-  return new Promise((resolve) => {
-    // Also resolve on 'token-refreshed' event
-    const handler = () => {
-      isWaitingForTokenRefresh = false;
-      window.removeEventListener('token-refreshed', handler);
-      resolve();
-    };
-    window.addEventListener('token-refreshed', handler);
-
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      isWaitingForTokenRefresh = false;
-      window.removeEventListener('token-refreshed', handler);
-      resolve();
-    }, 10000);
-  });
-}
 
 /**
  * Fetch with automatic token refresh on 401
@@ -51,16 +20,15 @@ async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise
   // If 401 Unauthorized, try to refresh token and retry once
   if (response.status === 401 && getToken()) {
     console.log("[API] Got 401, waiting for token refresh...");
-    await waitForTokenRefresh();
+    await notifyAndWaitForTokenRefresh();
 
     // Rebuild URL with new token
     const newToken = getToken();
     if (newToken) {
-      // Update URL with new token
-      const urlObj = new URL(url, window.location.origin);
-      urlObj.searchParams.set('token', newToken);
+      // Use replaceTokenInUrl to properly replace token parameter
+      const newUrl = replaceTokenInUrl(url, newToken);
       console.log("[API] Retrying request with refreshed token");
-      return fetch(urlObj.toString(), options);
+      return fetch(newUrl, options);
     }
   }
 
@@ -253,7 +221,7 @@ export async function createOpenAceProject(
 export async function deleteOpenAceProject(projectId: number): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/projects/${projectId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
@@ -264,7 +232,7 @@ export async function deleteOpenAceProject(projectId: number): Promise<{ success
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Failed to delete project: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -276,18 +244,18 @@ export async function browseDirectory(path?: string): Promise<BrowseResponse> {
   if (path) {
     url = `${url}&path=${encodeURIComponent(path)}`;
   }
-  
-  const response = await fetch(url, {
+
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
     },
   });
-  
+
   if (!response.ok) {
     throw new Error(`Failed to browse directory: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -296,15 +264,15 @@ export async function browseDirectory(path?: string): Promise<BrowseResponse> {
  */
 export async function checkPath(path: string): Promise<CheckPathResponse> {
   const url = buildOpenAceUrl("/api/fs/check-path");
-  
-  const response = await fetch(url, {
+
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ path }),
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     return {
@@ -313,7 +281,7 @@ export async function checkPath(path: string): Promise<CheckPathResponse> {
       error: error.error || "Failed to check path",
     };
   }
-  
+
   return response.json();
 }
 
@@ -323,7 +291,7 @@ export async function checkPath(path: string): Promise<CheckPathResponse> {
 export async function getWorkspaceConfig(): Promise<WorkspaceConfigResponse> {
   const url = buildOpenAceUrl("/api/workspace/config");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -342,18 +310,18 @@ export async function getWorkspaceConfig(): Promise<WorkspaceConfigResponse> {
  */
 export async function getHomeDirectory(): Promise<{ homePath: string; canCreate: boolean }> {
   const url = buildOpenAceUrl("/api/fs/home");
-  
-  const response = await fetch(url, {
+
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
     },
   });
-  
+
   if (!response.ok) {
     throw new Error(`Failed to get home directory: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -416,7 +384,7 @@ export async function fetchSessionModels(request: {
   }
   const url = buildOpenAceUrl(`/api/workspace/session-models?${params}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -476,7 +444,7 @@ export interface RemoteSession {
 export async function fetchRemoteMachines(): Promise<{ success: boolean; machines: RemoteMachine[] }> {
   const url = buildOpenAceUrl("/api/remote/machines/available");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -574,7 +542,7 @@ export async function switchRemoteModel(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/model`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -600,7 +568,7 @@ export async function getRemoteSessionStatus(
 ): Promise<{ success: boolean; session: RemoteSession }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -623,7 +591,7 @@ export async function abortRemoteRequest(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/abort`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -646,7 +614,7 @@ export async function stopRemoteSession(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stop`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -675,7 +643,7 @@ export async function browseRemoteDirectory(
     url = `${url}&path=${encodeURIComponent(path)}`;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -705,7 +673,7 @@ export async function sendPermissionResponse(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/permission`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -735,7 +703,7 @@ export async function pauseRemoteSession(
   sessionId: string
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/pause`);
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -754,7 +722,7 @@ export async function resumeRemoteSession(
   sessionId: string
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/resume`);
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -809,19 +777,51 @@ export function createRemoteSessionStreamWithReconnect(
     stallTimeout = 35000,  // 35s: backend heartbeat is 10s, use 3.5x to avoid false stall detection
   } = options;
 
-  const url = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
+  let currentUrl = buildOpenAceUrl(`/api/remote/sessions/${sessionId}/stream`);
   let retryCount = 0;
   let currentDelay = initialRetryDelay;
   let es: EventSource;
   let reconnectTimer: number | null = null;
   let stallTimer: number | null = null;  // Stall detection timer
 
+  /**
+   * Check if SSE endpoint returns 401 (token expired)
+   * Returns true if 401 detected and token refresh is needed
+   */
+  const checkTokenExpired = async (): Promise<boolean> => {
+    try {
+      const response = await fetch(currentUrl, { method: 'HEAD' });
+      if (response.status === 401 && getToken()) {
+        console.log("[SSE] Token expired detected, waiting for refresh...");
+        return true;
+      }
+    } catch {
+      // Network error, not necessarily token issue
+    }
+    return false;
+  };
+
   // Shared reconnect scheduler to avoid code duplication
-  const scheduleReconnect = (reason: string) => {
+  const scheduleReconnect = async (reason: string) => {
     if (retryCount < maxRetries && maxRetries > 0) {
       retryCount++;
       console.debug(`[SSE] Reconnecting after ${reason}...`);
       onStateChange?.('reconnecting');
+
+      // Check if token expired before reconnecting
+      if (reason === 'error' && getToken()) {
+        const expired = await checkTokenExpired();
+        if (expired) {
+          await notifyAndWaitForTokenRefresh();
+          // Update URL with new token
+          const newToken = getToken();
+          if (newToken) {
+            currentUrl = replaceTokenInUrl(currentUrl, newToken);
+            console.log("[SSE] URL updated with refreshed token");
+          }
+        }
+      }
+
       reconnectTimer = window.setTimeout(() => {
         currentDelay = Math.min(currentDelay * 2, maxRetryDelay);
         connect();
@@ -842,16 +842,17 @@ export function createRemoteSessionStreamWithReconnect(
       console.warn("[SSE] Stall detected, no data for", stallTimeout, "ms");
       if (es.readyState === EventSource.OPEN) {
         es.close();
-        scheduleReconnect('stall');
+        // Use void to explicitly ignore the promise (async function in setTimeout)
+        void scheduleReconnect('stall');
       }
     }, stallTimeout);
   };
 
   const connect = () => {
-    console.debug("[SSE] Connecting to:", url, `(retry ${retryCount}/${maxRetries})`);
+    console.debug("[SSE] Connecting to:", currentUrl, `(retry ${retryCount}/${maxRetries})`);
     onStateChange?.(retryCount > 0 ? 'reconnecting' : 'connected');
 
-    es = new EventSource(url);
+    es = new EventSource(currentUrl);
 
     es.onopen = () => {
       console.debug("[SSE] Connection opened");
@@ -883,14 +884,14 @@ export function createRemoteSessionStreamWithReconnect(
       onLine(event.data);
     };
 
-    es.onerror = (e) => {
+    es.onerror = async (e) => {
       console.error("[SSE] Error, readyState:", es.readyState, e);
       if (stallTimer !== null) {
         window.clearTimeout(stallTimer);
         stallTimer = null;
       }
       es.close();
-      scheduleReconnect('error');
+      await scheduleReconnect('error');
     };
   };
 
@@ -952,7 +953,7 @@ export async function fetchRemoteGitStatus(
     `/api/remote/machines/${encodeURIComponent(machineId)}/git/status?path=${encodeURIComponent(projectPath)}`
   );
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
@@ -981,7 +982,7 @@ export async function fetchRemoteGitDiff(
     `/api/remote/machines/${encodeURIComponent(machineId)}/git/diff?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
   );
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
@@ -1006,7 +1007,7 @@ export async function fetchRemoteGitFile(
     `/api/remote/machines/${encodeURIComponent(machineId)}/git/file?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(file)}`
   );
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
@@ -1032,7 +1033,7 @@ export async function startRemoteVSCode(
 ): Promise<{ success: boolean; vscode_id?: string; status?: string; error?: string }> {
   const url = buildOpenAceUrl("/api/remote/vscode/start");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ machine_id: machineId, project_path: projectPath }),
@@ -1055,7 +1056,7 @@ export async function stopRemoteVSCode(
 ): Promise<{ success: boolean }> {
   const url = buildOpenAceUrl("/api/remote/vscode/stop");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ vscode_id: vscodeId, machine_id: machineId }),
@@ -1081,7 +1082,7 @@ export async function getRemoteVSCodeStatus(
 }> {
   const url = buildOpenAceUrl(`/api/remote/vscode/${vscodeId}/status`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTokenRefresh(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
