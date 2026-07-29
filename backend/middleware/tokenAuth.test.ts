@@ -148,8 +148,8 @@ describe("createTokenAuthMiddleware", () => {
     const secret = "test-secret-key";
     const userId = 1;
     const port = 3101;
-    // Timestamp 40 minutes ago (TTL is 30 minutes)
-    const timestamp = Math.floor(Date.now() / 1000) - 2400;
+    // Timestamp 25 hours ago (TTL is 24 hours)
+    const timestamp = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
     const randomPart = "abc123def456";
 
     const expiredToken = await generateTokenV2(
@@ -173,8 +173,8 @@ describe("createTokenAuthMiddleware", () => {
     const secret = "test-secret-key";
     const userId = 1;
     const port = 3101;
-    // Timestamp 29 minutes ago (within 30 minute TTL)
-    const timestamp = Math.floor(Date.now() / 1000) - 29 * 60;
+    // Timestamp 23 hours ago (within 24 hour TTL)
+    const timestamp = Math.floor(Date.now() / 1000) - 23 * 60 * 60;
     const randomPart = "abc123def456";
 
     const validToken = await generateTokenV2(
