@@ -7,7 +7,7 @@
  * Supports two token formats:
  *
  * v2 format (recommended): v2:{user_id}:{port}:{timestamp}:{random}:{signature}
- *   - Includes timestamp for TTL validation (30 minutes default)
+ *   - Includes timestamp for TTL validation (default 24 hours, configurable via TOKEN_TTL_SECONDS env)
  *   - Signature: SHA256(v2:{user_id}:{port}:{timestamp}:{random}:{secret})[:16]
  *
  * v1 format (legacy): {user_id}:{port}:{random}:{signature}
@@ -42,9 +42,17 @@ async function sha256Hex(data: string): Promise<string> {
 }
 
 /**
- * Token TTL in seconds (30 minutes, matching Open-ACE default)
+ * Token TTL in seconds
+ *
+ * Default: 24 hours (86400 seconds), matching Open-ACE default
+ * Can be configured via TOKEN_TTL_SECONDS environment variable
+ *
+ * Note: This should match OPENACE_WEBUI_TOKEN_TTL_SECONDS in Open-ACE backend
  */
-const TOKEN_TTL_SECONDS = 1800;
+const TOKEN_TTL_SECONDS = parseInt(
+  process.env.TOKEN_TTL_SECONDS || "86400",
+  10
+);
 
 /**
  * Validates a v2 format token with TTL support
