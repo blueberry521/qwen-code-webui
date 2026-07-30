@@ -49,10 +49,10 @@ async function sha256Hex(data: string): Promise<string> {
  *
  * Note: This should match OPENACE_WEBUI_TOKEN_TTL_SECONDS in Open-ACE backend
  */
-const TOKEN_TTL_SECONDS = parseInt(
-  process.env.TOKEN_TTL_SECONDS || "86400",
-  10
-);
+const TOKEN_TTL_SECONDS = (() => {
+  const parsed = parseInt(process.env.TOKEN_TTL_SECONDS || "86400", 10);
+  return isNaN(parsed) || parsed <= 0 ? 86400 : parsed;
+})();
 
 /**
  * Validates a v2 format token with TTL support
