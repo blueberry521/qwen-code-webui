@@ -114,6 +114,7 @@ The backend server supports the following command-line options:
 
 - `PORT` - Same as `--port`
 - `DEBUG` - Same as `--debug`
+- `TOKEN_TTL_SECONDS` - Token time-to-live (seconds) for Open-ACE integration. Defaults to `86400` (24 hours), matching the Open-ACE default. **This must match `OPENACE_WEBUI_TOKEN_TTL_SECONDS` in the Open-ACE backend**; a mismatch causes tokens to be rejected as expired by whichever side has the shorter TTL. Invalid values (non-numeric, `<= 0`) fall back to the default.
 
 ### Examples
 
@@ -197,6 +198,7 @@ cd frontend && npm run dev
 - **No authentication**: Currently no built-in auth mechanism
 - **System access**: Qwen can read/write files in selected projects
 - **Network exposure**: Configurable but requires careful consideration
+- **Open-ACE integration token lifetime**: In iframe-integrated mode the auth token is passed as a URL query parameter (`?token=...`) and is valid for `TOKEN_TTL_SECONDS` (24h by default). Because query parameters can leak via browser history, server logs, or `Referer` headers, a longer TTL widens the window during which a leaked token is usable. Prefer a shorter TTL in shared/sensitive deployments and ensure transport is HTTPS.
 
 ---
 
