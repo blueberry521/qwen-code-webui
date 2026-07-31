@@ -183,8 +183,20 @@ export function notifyAndWaitForTokenRefresh(): Promise<void> {
     setTimeout(() => {
       const index = refreshWaiters.indexOf(resolve);
       if (index !== -1) {
+        // Still pending → the parent never responded within 10s. Remove this
+        // waiter and, if no others remain, clear the pending flag so the next
+        // 401 re-notifies the parent. Without this reset, a non-responding
+        // parent would leave isTokenRefreshPending=true forever, so the parent
+        // is never re-notified and the request loops: 401 → wait 10s → retry
+        // with the stale token → 401 → ...
         refreshWaiters.splice(index, 1);
+        if (refreshWaiters.length === 0) {
+          isTokenRefreshPending = false;
+        }
       }
+      // If index === -1 the parent already resolved us via
+      // resolveTokenRefreshWaiters() (which cleared the flag); leave the flag
+      // untouched so we never clobber a newer refresh cycle.
       resolve();
     }, 10000);
   });
@@ -210,11 +222,12 @@ export function setupTokenRefreshListener(): void {
   if (listenerSetup) return;
   listenerSetup = true;
 
-  // Cache allowed origin for validation
-  const allowedOrigin = getAllowedOrigin();
-
   window.addEventListener('message', (event: MessageEvent) => {
-    // Validate message origin to prevent malicious messages
+    // Validate message origin to prevent malicious messages. Resolve the
+    // allowed origin dynamically on each message (same helper notifyTokenExpired
+    // uses), so the two paths never disagree if the Open-ACE URL changes at
+    // runtime — previously this was cached once at setup time.
+    const allowedOrigin = getAllowedOrigin();
     if (event.origin !== allowedOrigin && event.origin !== window.location.origin) {
       console.warn("[Token] Ignoring message from untrusted origin:", event.origin);
       return;
