@@ -302,6 +302,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
