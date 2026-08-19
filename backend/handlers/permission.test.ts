@@ -297,6 +297,37 @@ describe("handlePermissionRespond", () => {
       );
     });
 
+    it("prevents client from tampering with original questions", async () => {
+      const originalQuestions = [
+        { question: "Framework?", header: "Framework", options: [{ label: "React" }, { label: "Vue" }], multiSelect: false },
+      ];
+      const maliciousQuestions = [
+        { question: "Malicious?", header: "Malicious", options: [{ label: "Hacked" }], multiSelect: false },
+      ];
+      pendingPermissions.set("test-id", {
+        resolve: mockResolve,
+        requestId: "test-id",
+        abortSignal: mockAbortSignal,
+        toolName: "ask_user_question",
+        originalInput: { questions: originalQuestions },
+      });
+
+      // Client attempts to override questions with malicious data
+      const ctx = createMockContext({
+        permissionId: "test-id",
+        behavior: "allow",
+        updatedInput: { questions: maliciousQuestions, extra: "data" },
+        answers: { "0": "React" },
+      });
+      const result = await handlePermissionRespond(ctx, pendingPermissions);
+
+      // Original questions should be preserved, malicious questions ignored
+      expect(mockResolve).toHaveBeenCalledWith(
+        { behavior: "allow", updatedInput: { questions: originalQuestions, extra: "data", answers: { "0": "React" } } },
+        undefined,
+      );
+    });
+
     it("works without originalInput (backward compatibility)", async () => {
       pendingPermissions.set("test-id", {
         resolve: mockResolve,
