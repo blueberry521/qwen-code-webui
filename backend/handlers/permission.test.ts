@@ -76,6 +76,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: abortController.signal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
@@ -97,6 +98,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
@@ -118,6 +120,8 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
+        originalInput: { command: "original" },
       });
 
       const ctx = createMockContext({
@@ -138,6 +142,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
@@ -160,6 +165,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
@@ -180,6 +186,7 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "test_tool",
       });
 
       const ctx = createMockContext({
@@ -202,6 +209,8 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "ask_user_question",
+        originalInput: { questions: [{ question: "Framework?", header: "Framework", options: [{ label: "React" }, { label: "Vue" }], multiSelect: false }] },
       });
 
       const ctx = createMockContext({
@@ -212,7 +221,7 @@ describe("handlePermissionRespond", () => {
       const result = await handlePermissionRespond(ctx, pendingPermissions);
 
       expect(mockResolve).toHaveBeenCalledWith(
-        { behavior: "allow", updatedInput: { answers: { "0": "React", "1": "Dark mode" } } },
+        { behavior: "allow", updatedInput: { questions: [{ question: "Framework?", header: "Framework", options: [{ label: "React" }, { label: "Vue" }], multiSelect: false }], answers: { "0": "React", "1": "Dark mode" } } },
         undefined,
       );
     });
@@ -222,6 +231,8 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "ask_user_question",
+        originalInput: { questions: [{ question: "Test?", header: "Test", options: [{ label: "A" }, { label: "B" }], multiSelect: false }] },
       });
 
       const ctx = createMockContext({
@@ -233,7 +244,7 @@ describe("handlePermissionRespond", () => {
       const result = await handlePermissionRespond(ctx, pendingPermissions);
 
       expect(mockResolve).toHaveBeenCalledWith(
-        { behavior: "allow", updatedInput: { command: "test", answers: { "0": "Option A" } } },
+        { behavior: "allow", updatedInput: { questions: [{ question: "Test?", header: "Test", options: [{ label: "A" }, { label: "B" }], multiSelect: false }], command: "test", answers: { "0": "Option A" } } },
         undefined,
       );
     });
@@ -243,6 +254,8 @@ describe("handlePermissionRespond", () => {
         resolve: mockResolve,
         requestId: "test-id",
         abortSignal: mockAbortSignal,
+        toolName: "ask_user_question",
+        originalInput: { questions: [{ question: "Test?", header: "Test", options: [{ label: "A" }, { label: "B" }], multiSelect: false }] },
       });
 
       const ctx = createMockContext({
@@ -256,6 +269,53 @@ describe("handlePermissionRespond", () => {
         behavior: "deny",
         message: "User denied this tool call [proactive]",
       });
+    });
+
+    it("preserves originalInput questions when answers provided", async () => {
+      const originalQuestions = [
+        { question: "Framework?", header: "Framework", options: [{ label: "React" }, { label: "Vue" }], multiSelect: false },
+        { question: "Theme?", header: "Theme", options: [{ label: "Dark mode" }, { label: "Light mode" }], multiSelect: false },
+      ];
+      pendingPermissions.set("test-id", {
+        resolve: mockResolve,
+        requestId: "test-id",
+        abortSignal: mockAbortSignal,
+        toolName: "ask_user_question",
+        originalInput: { questions: originalQuestions },
+      });
+
+      const ctx = createMockContext({
+        permissionId: "test-id",
+        behavior: "allow",
+        answers: { "0": "React", "1": "Dark mode" },
+      });
+      const result = await handlePermissionRespond(ctx, pendingPermissions);
+
+      expect(mockResolve).toHaveBeenCalledWith(
+        { behavior: "allow", updatedInput: { questions: originalQuestions, answers: { "0": "React", "1": "Dark mode" } } },
+        undefined,
+      );
+    });
+
+    it("works without originalInput (backward compatibility)", async () => {
+      pendingPermissions.set("test-id", {
+        resolve: mockResolve,
+        requestId: "test-id",
+        abortSignal: mockAbortSignal,
+      });
+
+      const ctx = createMockContext({
+        permissionId: "test-id",
+        behavior: "allow",
+        updatedInput: { command: "ls" },
+        answers: { "0": "React" },
+      });
+      const result = await handlePermissionRespond(ctx, pendingPermissions);
+
+      expect(mockResolve).toHaveBeenCalledWith(
+        { behavior: "allow", updatedInput: { command: "ls", answers: { "0": "React" } } },
+        undefined,
+      );
     });
   });
 });

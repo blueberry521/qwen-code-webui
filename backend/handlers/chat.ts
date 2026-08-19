@@ -29,6 +29,13 @@ const activeSessions = new Map<string, string>();
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 
 /**
+ * Maximum size for tool input that will be preserved in pending permissions.
+ * Inputs larger than this limit are not stored to prevent memory issues.
+ * 1 MB limit provides plenty of room for reasonable tool inputs.
+ */
+const MAX_TOOL_INPUT_SIZE = 1_000_000; // 1 MB
+
+/**
  * Keepalive heartbeat interval. Frontend stall detector triggers after 120s
  * of silence, so 8 missed heartbeats (8 × 15s) = stall detected.
  */
@@ -380,6 +387,26 @@ async function executeQwenCommand(
         };
         abortController!.signal.addEventListener("abort", onAbort, { once: true });
 
+        // Deep clone input to preserve original data for ask_user_question tool
+        // Skip cloning if input is too large to prevent memory issues
+        let clonedInput: Readonly<Record<string, unknown>> | undefined;
+        if (input) {
+          try {
+            const inputSize = JSON.stringify(input).length;
+            if (inputSize <= MAX_TOOL_INPUT_SIZE) {
+              clonedInput = structuredClone(input) as Readonly<Record<string, unknown>>;
+            } else {
+              logger.chat.warn(
+                "Tool input too large to preserve, size={size} bytes, toolName={toolName}",
+                { size: inputSize, toolName },
+              );
+            }
+          } catch {
+            // structuredClone may fail on non-cloneable objects (e.g., functions)
+            logger.chat.warn("Failed to clone tool input for toolName={toolName}", { toolName });
+          }
+        }
+
         pendingPermissions.set(permissionId, {
           resolve: (result, scope) => {
             clearTimeout(safetyTimer);
@@ -397,6 +424,8 @@ async function executeQwenCommand(
           },
           abortSignal: abortController!.signal,
           requestId, // 用于 cancel() 中检测 pending permissions
+          toolName,
+          originalInput: clonedInput,
         });
       });
     };
