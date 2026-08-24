@@ -103,13 +103,14 @@ function handleProxyRequest(
     return;
   }
 
-  // Build upstream URL
-  const upstreamUrl = new URL(remainingPath, upstreamBaseUrl);
-  // Preserve query string from original request
-  const queryIdx = reqUrl.indexOf("?");
-  if (queryIdx !== -1) {
-    upstreamUrl.search = reqUrl.substring(queryIdx);
-  }
+  // Build upstream URL using string concatenation (matching OpenAI SDK behavior).
+  // Using new URL(path, base) would lose the upstream's path prefix, e.g.:
+  //   new URL("/v1/chat/completions", "http://host/custom/prefix") → "http://host/v1/chat/completions"
+  // String concatenation preserves it:
+  //   "http://host/custom/prefix" + "/v1/chat/completions" → "http://host/custom/prefix/v1/chat/completions"
+  // Note: remainingPath already includes the query string (if any) from the original URL
+  // since we built it from path segments. No need to append it separately.
+  const upstreamUrl = new URL(upstreamBaseUrl + remainingPath);
 
   // Build headers for upstream request
   const upstreamHeaders: Record<string, string | string[] | undefined> = {};
@@ -185,12 +186,20 @@ export function isProxyRunning(): boolean {
  * Get the proxy base URL for a given session ID.
  * Returns null if proxy is not running.
  *
+ * The returned URL is used as OPENAI_BASE_URL for the CLI subprocess.
+ * The OpenAI SDK appends paths like /chat/completions via string concatenation,
+ * so the proxy receives: /<sessionId>/chat/completions
+ *
+ * Note: Do NOT append /v1 here. The original OPENAI_BASE_URL may already
+ * include /v1 or a custom path prefix, and we want the proxy to forward
+ * the exact same path structure to the upstream.
+ *
  * @param sessionId - The Qwen session ID
- * @returns The proxy base URL (e.g., http://127.0.0.1:12345/<sessionId>/v1)
+ * @returns The proxy base URL (e.g., http://127.0.0.1:12345/<sessionId>)
  */
 export function getProxyBaseUrl(sessionId: string): string | null {
   if (!proxyPort) return null;
-  return `http://127.0.0.1:${proxyPort}/${sessionId}/v1`;
+  return `http://127.0.0.1:${proxyPort}/${sessionId}`;
 }
 
 /**

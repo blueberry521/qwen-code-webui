@@ -177,7 +177,7 @@ describe("llmProxy", () => {
     it("returns correct URL format when running", async () => {
       const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}`);
       const baseUrl = getProxyBaseUrl("my-session-123");
-      expect(baseUrl).toBe(`http://127.0.0.1:${port}/my-session-123/v1`);
+      expect(baseUrl).toBe(`http://127.0.0.1:${port}/my-session-123`);
     });
   });
 
@@ -188,7 +188,7 @@ describe("llmProxy", () => {
 
       const response = await makeProxyRequest(
         port,
-        `/${sessionId}/v1/chat/completions`,
+        `/${sessionId}/chat/completions`,
         {
           method: "POST",
           body: JSON.stringify({ model: "test", messages: [] }),
@@ -205,7 +205,7 @@ describe("llmProxy", () => {
       expect(upstreamReq.headers["x-session-id"]).toBe(sessionId);
 
       // URL should have the session ID stripped
-      expect(upstreamReq.url).toBe("/v1/chat/completions");
+      expect(upstreamReq.url).toBe("/chat/completions");
 
       // Method should be preserved
       expect(upstreamReq.method).toBe("POST");
@@ -218,9 +218,9 @@ describe("llmProxy", () => {
       const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}`);
 
       const responses = await Promise.all([
-        makeProxyRequest(port, "/session-A/v1/chat/completions", { body: "{}" }),
-        makeProxyRequest(port, "/session-B/v1/chat/completions", { body: "{}" }),
-        makeProxyRequest(port, "/session-C/v1/chat/completions", { body: "{}" }),
+        makeProxyRequest(port, "/session-A/chat/completions", { body: "{}" }),
+        makeProxyRequest(port, "/session-B/chat/completions", { body: "{}" }),
+        makeProxyRequest(port, "/session-C/chat/completions", { body: "{}" }),
       ]);
 
       expect(responses.every((r) => r.status === 200)).toBe(true);
@@ -246,13 +246,13 @@ describe("llmProxy", () => {
 
       const response = await makeProxyRequest(
         port,
-        "/session-1/v1/models?limit=10",
+        "/session-1/models?limit=10",
         { method: "GET" },
       );
 
       expect(response.status).toBe(200);
       expect(upstream.receivedRequests).toHaveLength(1);
-      expect(upstream.receivedRequests[0].url).toBe("/v1/models?limit=10");
+      expect(upstream.receivedRequests[0].url).toBe("/models?limit=10");
     });
 
     it("forwards request body correctly", async () => {
@@ -263,10 +263,53 @@ describe("llmProxy", () => {
         stream: true,
       });
 
-      await makeProxyRequest(port, "/session-x/v1/chat/completions", { body });
+      await makeProxyRequest(port, "/session-x/chat/completions", { body });
 
       expect(upstream.receivedRequests).toHaveLength(1);
       expect(upstream.receivedRequests[0].body).toBe(body);
+    });
+  });
+
+  describe("upstream path prefix preservation", () => {
+    it("preserves upstream URL path prefix (string concatenation, not URL resolution)", async () => {
+      // When OPENAI_BASE_URL has a path prefix like /custom/prefix,
+      // the proxy must preserve it when forwarding to upstream.
+      // new URL("/chat/completions", "http://host/custom/prefix") would LOSE /custom/prefix,
+      // but string concatenation "http://host/custom/prefix" + "/chat/completions" preserves it.
+      const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}/custom/prefix`);
+
+      const response = await makeProxyRequest(
+        port,
+        "/session-prefix/chat/completions",
+        { body: "{}" },
+      );
+
+      expect(response.status).toBe(200);
+      expect(upstream.receivedRequests).toHaveLength(1);
+      // Upstream should receive the path with the prefix preserved
+      expect(upstream.receivedRequests[0].url).toBe("/custom/prefix/chat/completions");
+      // Session ID should still be injected
+      expect(upstream.receivedRequests[0].headers["x-session-id"]).toBe("session-prefix");
+    });
+
+    it("works with upstream URL ending in /v1", async () => {
+      // Common case: OPENAI_BASE_URL = http://host/v1
+      const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}/v1`);
+
+      await makeProxyRequest(port, "/session-v1/chat/completions", { body: "{}" });
+
+      expect(upstream.receivedRequests).toHaveLength(1);
+      expect(upstream.receivedRequests[0].url).toBe("/v1/chat/completions");
+    });
+
+    it("works with upstream URL without path", async () => {
+      // Edge case: OPENAI_BASE_URL = http://host (no path)
+      const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}`);
+
+      await makeProxyRequest(port, "/session-nopath/chat/completions", { body: "{}" });
+
+      expect(upstream.receivedRequests).toHaveLength(1);
+      expect(upstream.receivedRequests[0].url).toBe("/chat/completions");
     });
   });
 
@@ -277,7 +320,7 @@ describe("llmProxy", () => {
 
       const response = await makeProxyRequest(
         port,
-        "/session-err/v1/chat/completions",
+        "/session-err/chat/completions",
         { body: "{}" },
       );
 
