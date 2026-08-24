@@ -12,6 +12,7 @@ import {
   updateTrackedCliSessionId,
 } from "../utils/cliProcessRegistry.ts";
 import { loadQwenQuery } from "../utils/qwenSdk.ts";
+import { getProxyBaseUrl, isProxyRunning } from "../utils/llmProxy.ts";
 import type { PendingPermission } from "./permission.ts";
 import type { ServerResponse } from "node:http";
 
@@ -401,6 +402,23 @@ async function executeQwenCommand(
       });
     };
 
+    // Build environment variables for CLI subprocess.
+    // When the LLM proxy is running (Open-ACE integration mode), override
+    // OPENAI_BASE_URL to route requests through our local proxy, which injects
+    // the X-Session-Id header for proper session attribution.
+    // @see https://github.com/ivycomputing/qwen-code-webui/issues/220
+    const cliEnv: Record<string, string> = {};
+    if (sessionId && isProxyRunning()) {
+      const proxyBaseUrl = getProxyBaseUrl(sessionId);
+      if (proxyBaseUrl) {
+        cliEnv.OPENAI_BASE_URL = proxyBaseUrl;
+        logger.chat.debug(
+          "Routing CLI through LLM proxy for session {sessionId}: {proxyBaseUrl}",
+          { sessionId, proxyBaseUrl },
+        );
+      }
+    }
+
     await runWithTrackedCliRequest(requestId, async () => {
       for await (const sdkMessage of query({
         prompt: processedMessage,
@@ -413,6 +431,7 @@ async function executeQwenCommand(
           ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
           ...(model ? { model } : {}),
           ...(authType ? { authType } : {}),
+          ...(Object.keys(cliEnv).length > 0 ? { env: cliEnv } : {}),
           stderr: (message: string) => {
             logger.chat.info("CLI stderr: {message}", { message });
           },
