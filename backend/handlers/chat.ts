@@ -13,6 +13,7 @@ import {
 } from "../utils/cliProcessRegistry.ts";
 import { loadQwenQuery } from "../utils/qwenSdk.ts";
 import type { PendingPermission } from "./permission.ts";
+import { preserveToolInput } from "./toolInputSnapshot.ts";
 import type { ServerResponse } from "node:http";
 
 /** Track number of concurrent chat requests for diagnostics */
@@ -27,13 +28,6 @@ const activeSessions = new Map<string, string>();
 
 /** 24-hour timeout for user-facing operations (permission prompts, control requests) */
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
-
-/**
- * Maximum size for tool input that will be preserved in pending permissions.
- * Inputs larger than this limit are not stored to prevent memory issues.
- * 1 MB limit provides plenty of room for reasonable tool inputs.
- */
-const MAX_TOOL_INPUT_SIZE = 1_000_000; // 1 MB
 
 /**
  * Keepalive heartbeat interval. Frontend stall detector triggers after 120s
@@ -387,25 +381,10 @@ async function executeQwenCommand(
         };
         abortController!.signal.addEventListener("abort", onAbort, { once: true });
 
-        // Deep clone input to preserve original data for ask_user_question tool
-        // Skip cloning if input is too large to prevent memory issues
-        let clonedInput: Readonly<Record<string, unknown>> | undefined;
-        if (input) {
-          try {
-            const inputSize = JSON.stringify(input).length;
-            if (inputSize <= MAX_TOOL_INPUT_SIZE) {
-              clonedInput = structuredClone(input) as Readonly<Record<string, unknown>>;
-            } else {
-              logger.chat.warn(
-                "Tool input too large to preserve, size={size} bytes, toolName={toolName}",
-                { size: inputSize, toolName },
-              );
-            }
-          } catch {
-            // structuredClone may fail on non-cloneable objects (e.g., functions)
-            logger.chat.warn("Failed to clone tool input for toolName={toolName}", { toolName });
-          }
-        }
+        // Preserve a snapshot of the input so it can be merged back when the
+        // user responds. For ask_user_question this snapshot is the only
+        // server-side source of the original questions (see toolInputSnapshot).
+        const clonedInput = preserveToolInput(input, toolName);
 
         pendingPermissions.set(permissionId, {
           resolve: (result, scope) => {

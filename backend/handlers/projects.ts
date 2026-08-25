@@ -177,7 +177,7 @@ export async function handleDeleteProjectRequest(c: Context) {
       if (!dirInfo.isDirectory) {
         return c.json({ error: "Project not found" }, 404);
       }
-    } catch (error) {
+    } catch {
       return c.json({ error: "Project not found" }, 404);
     }
 
