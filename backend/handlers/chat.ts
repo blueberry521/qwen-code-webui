@@ -12,6 +12,7 @@ import {
   updateTrackedCliSessionId,
 } from "../utils/cliProcessRegistry.ts";
 import { loadQwenQuery } from "../utils/qwenSdk.ts";
+import { getProxyBaseUrl, isProxyRunning } from "../utils/llmProxy.ts";
 import type { PendingPermission } from "./permission.ts";
 import { preserveToolInput } from "./toolInputSnapshot.ts";
 import type { ServerResponse } from "node:http";
@@ -409,6 +410,35 @@ async function executeQwenCommand(
       });
     };
 
+    // Build environment variables for CLI subprocess.
+    // When the LLM proxy is running (Open-ACE integration mode), override
+    // OPENAI_BASE_URL to route requests through our local proxy, which injects
+    // the X-Session-Id header for proper session attribution.
+    // @see https://github.com/ivycomputing/qwen-code-webui/issues/220
+    //
+    // First-turn guard: we intentionally route through the proxy ONLY when we
+    // already have a sessionId. A brand-new conversation has none until the CLI
+    // returns it in the init message (and the frontend then registers it with
+    // Open-ACE via create_session). Injecting an as-yet-unregistered id would
+    // make the Open-ACE proxy reject the request with 404 session_not_found and
+    // break the model call; omitting the header instead lets Open-ACE fall back
+    // to the user-level aggregate session (the request succeeds, though the
+    // first turn is attributed to the aggregate rather than this session).
+    // Fully closing this first-turn gap requires owning the session id up front
+    // (SDK `sessionId` option) and awaiting Open-ACE registration before the
+    // first request — tracked separately from this proxy change.
+    const cliEnv: Record<string, string> = {};
+    if (sessionId && isProxyRunning()) {
+      const proxyBaseUrl = getProxyBaseUrl(sessionId);
+      if (proxyBaseUrl) {
+        cliEnv.OPENAI_BASE_URL = proxyBaseUrl;
+        logger.chat.debug(
+          "Routing CLI through LLM proxy for session {sessionId}: {proxyBaseUrl}",
+          { sessionId, proxyBaseUrl },
+        );
+      }
+    }
+
     await runWithTrackedCliRequest(requestId, async () => {
       for await (const sdkMessage of query({
         prompt: processedMessage,
@@ -421,6 +451,7 @@ async function executeQwenCommand(
           ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
           ...(model ? { model } : {}),
           ...(authType ? { authType } : {}),
+          ...(Object.keys(cliEnv).length > 0 ? { env: cliEnv } : {}),
           stderr: (message: string) => {
             logger.chat.info("CLI stderr: {message}", { message });
           },
