@@ -13,6 +13,7 @@ import {
 } from "../utils/cliProcessRegistry.ts";
 import { loadQwenQuery } from "../utils/qwenSdk.ts";
 import type { PendingPermission } from "./permission.ts";
+import { preserveToolInput } from "./toolInputSnapshot.ts";
 import type { ServerResponse } from "node:http";
 
 /** Track number of concurrent chat requests for diagnostics */
@@ -380,6 +381,11 @@ async function executeQwenCommand(
         };
         abortController!.signal.addEventListener("abort", onAbort, { once: true });
 
+        // Preserve a snapshot of the input so it can be merged back when the
+        // user responds. For ask_user_question this snapshot is the only
+        // server-side source of the original questions (see toolInputSnapshot).
+        const clonedInput = preserveToolInput(input, toolName);
+
         pendingPermissions.set(permissionId, {
           resolve: (result, scope) => {
             clearTimeout(safetyTimer);
@@ -397,6 +403,8 @@ async function executeQwenCommand(
           },
           abortSignal: abortController!.signal,
           requestId, // 用于 cancel() 中检测 pending permissions
+          toolName,
+          originalInput: clonedInput,
         });
       });
     };
