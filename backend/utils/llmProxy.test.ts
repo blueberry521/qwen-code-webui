@@ -167,6 +167,31 @@ describe("llmProxy", () => {
       const port2 = await startLlmProxy(`http://127.0.0.1:${upstream.port}`);
       expect(port1).toBe(port2);
     });
+
+    it("concurrent starts resolve to the same real port (never null)", async () => {
+      const upstreamUrl = `http://127.0.0.1:${upstream.port}`;
+      const [p1, p2, p3] = await Promise.all([
+        startLlmProxy(upstreamUrl),
+        startLlmProxy(upstreamUrl),
+        startLlmProxy(upstreamUrl),
+      ]);
+      expect(p1).toBeGreaterThan(0);
+      expect(p2).toBe(p1);
+      expect(p3).toBe(p1);
+      expect(isProxyRunning()).toBe(true);
+    });
+
+    it("start followed immediately by stop settles the start promise", async () => {
+      const startPromise = startLlmProxy(`http://127.0.0.1:${upstream.port}`);
+      // Do not await the start — stop right away. Neither promise should hang.
+      const stopPromise = stopLlmProxy();
+
+      // The start resolves to a real port before the proxy is torn down.
+      await expect(startPromise).resolves.toBeGreaterThan(0);
+      await expect(stopPromise).resolves.toBeUndefined();
+      expect(isProxyRunning()).toBe(false);
+      expect(getProxyPort()).toBeNull();
+    });
   });
 
   describe("getProxyBaseUrl", () => {

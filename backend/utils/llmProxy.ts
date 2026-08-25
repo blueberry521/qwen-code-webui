@@ -22,48 +22,73 @@ import { logger } from "./logger.ts";
 let proxyServer: http.Server | null = null;
 let proxyPort: number | null = null;
 let upstreamBaseUrl: string | null = null;
+// In-flight start, so concurrent startLlmProxy() calls share one server and one
+// result instead of racing (a second caller must not resolve before the port is
+// known). Reset to null once the start settles.
+let startingPromise: Promise<number> | null = null;
 
 /**
  * Start the local LLM proxy server.
+ *
+ * Concurrency: a start already in flight is reused, and a fully-started proxy
+ * short-circuits, so repeated/parallel calls all resolve to the same port.
  *
  * @param upstreamUrl - The real LLM Proxy URL (from OPENAI_BASE_URL env var)
  * @returns The port number the proxy is listening on
  */
 export function startLlmProxy(upstreamUrl: string): Promise<number> {
-  if (proxyServer) {
+  // Fully started already — return the known port.
+  if (proxyServer && proxyPort !== null) {
     logger.chat.warn("LLM proxy already running on port {port}", { port: proxyPort });
-    return Promise.resolve(proxyPort!);
+    return Promise.resolve(proxyPort);
+  }
+  // A start is mid-flight — every concurrent caller awaits the same result.
+  if (startingPromise) {
+    return startingPromise;
   }
 
-  return new Promise((resolve, reject) => {
-    proxyServer = http.createServer((clientReq, clientRes) => {
+  startingPromise = new Promise<number>((resolve, reject) => {
+    const server = http.createServer((clientReq, clientRes) => {
       handleProxyRequest(clientReq, clientRes);
     });
+    proxyServer = server;
 
-    // Listen on a random available port, localhost only (secure)
-    proxyServer.listen(0, "127.0.0.1", () => {
-      const addr = proxyServer!.address();
-      if (addr && typeof addr === "object") {
-        proxyPort = addr.port;
-        upstreamBaseUrl = upstreamUrl;
-        logger.chat.info(
-          "LLM proxy started on port {port}, upstream: {upstream}",
-          { port: proxyPort, upstream: upstreamUrl },
-        );
-        resolve(proxyPort);
-      } else {
-        reject(new Error("Failed to get proxy server address"));
-      }
-    });
-
-    proxyServer.on("error", (err) => {
+    // During startup, a bind error (e.g. EADDRINUSE) rejects the start.
+    const onStartupError = (err: Error) => {
       logger.chat.error("LLM proxy server error: {error}", { error: err.message });
-      proxyServer = null;
+      if (proxyServer === server) proxyServer = null;
       proxyPort = null;
       upstreamBaseUrl = null;
+      startingPromise = null;
       reject(err);
+    };
+    server.once("error", onStartupError);
+
+    // Listen on a random available port, localhost only (secure)
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      if (!addr || typeof addr !== "object") {
+        onStartupError(new Error("Failed to get proxy server address"));
+        return;
+      }
+      proxyPort = addr.port;
+      upstreamBaseUrl = upstreamUrl;
+      startingPromise = null;
+      // Swap the startup error handler for a long-lived one so a post-startup
+      // server error is logged instead of crashing the process.
+      server.removeListener("error", onStartupError);
+      server.on("error", (err) => {
+        logger.chat.error("LLM proxy server error: {error}", { error: err.message });
+      });
+      logger.chat.info(
+        "LLM proxy started on port {port}, upstream: {upstream}",
+        { port: proxyPort, upstream: upstreamUrl },
+      );
+      resolve(proxyPort);
     });
   });
+
+  return startingPromise;
 }
 
 /**
@@ -123,6 +148,21 @@ function handleProxyRequest(
       ? upstreamBaseUrl.slice(0, -1)
       : upstreamBaseUrl;
     const upstreamUrl = new URL(base + remainingPath);
+
+    // SSRF guard: the destination origin must always be the configured upstream.
+    // remainingPath comes from the request path (client-controlled) and always
+    // starts with "/", so it can only affect the path — never the host. Pin the
+    // origin explicitly anyway, so a malformed path can never redirect the
+    // forwarded request to a different host/port than OPENAI_BASE_URL.
+    if (upstreamUrl.origin !== new URL(base).origin) {
+      logger.chat.warn(
+        "LLM proxy: refusing to forward to unexpected origin {origin} (session: {sessionId})",
+        { origin: upstreamUrl.origin, sessionId },
+      );
+      clientRes.writeHead(400, { "Content-Type": "text/plain" });
+      clientRes.end("Invalid proxy target");
+      return;
+    }
 
     // Build headers for upstream request
     const upstreamHeaders: Record<string, string | string[] | undefined> = {};
@@ -269,28 +309,44 @@ export function getProxyBaseUrl(sessionId: string): string | null {
 
 /**
  * Stop the LLM proxy server.
+ *
+ * If a start is still in flight, wait for it to finish binding first so we have
+ * a real server to close and its start promise settles deterministically —
+ * otherwise a start()-then-immediate-stop() sequence could leave the start
+ * promise pending forever.
  */
-export function stopLlmProxy(): Promise<void> {
-  return new Promise((resolve) => {
-    if (proxyServer) {
-      const server = proxyServer;
-      proxyServer = null;
-      proxyPort = null;
-      upstreamBaseUrl = null;
-      // Force close after 5 seconds if connections are still open (e.g. a
-      // long-lived SSE stream). unref() so this timer never keeps the process
-      // alive on its own, and clear it once close() completes normally.
-      const forceTimer = setTimeout(() => {
-        server.closeAllConnections?.();
-      }, 5000);
-      forceTimer.unref?.();
-      server.close(() => {
-        clearTimeout(forceTimer);
-        logger.chat.info("LLM proxy stopped");
-        resolve();
-      });
-    } else {
-      resolve();
+export async function stopLlmProxy(): Promise<void> {
+  const pendingStart = startingPromise;
+  if (pendingStart) {
+    // Let the in-flight start settle. If it failed to bind there is nothing to
+    // close; either way we then read the resulting proxyServer below.
+    try {
+      await pendingStart;
+    } catch {
+      /* start failed — no server to close */
     }
+  }
+
+  const server = proxyServer;
+  proxyServer = null;
+  proxyPort = null;
+  upstreamBaseUrl = null;
+  startingPromise = null;
+
+  if (!server) return;
+
+  await new Promise<void>((resolve) => {
+    // Force close after 5 seconds if connections are still open (e.g. a
+    // long-lived SSE stream). unref() so this timer never keeps the process
+    // alive on its own, and clear it once close() completes normally.
+    const forceTimer = setTimeout(() => {
+      server.closeAllConnections?.();
+    }, 5000);
+    forceTimer.unref?.();
+    server.close(() => {
+      clearTimeout(forceTimer);
+      logger.chat.info("LLM proxy stopped");
+      resolve();
+    });
   });
 }
