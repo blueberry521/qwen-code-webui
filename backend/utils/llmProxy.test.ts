@@ -327,4 +327,117 @@ describe("llmProxy", () => {
       expect(response.status).toBe(502);
     });
   });
+
+  describe("streaming and connection lifecycle", () => {
+    it("streams a chunked/SSE response back to the client", async () => {
+      const streamer = http.createServer((_req, res) => {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        });
+        res.write("data: one\n\n");
+        setTimeout(() => {
+          res.write("data: two\n\n");
+          res.end();
+        }, 10);
+      });
+      await new Promise<void>((r) => streamer.listen(0, "127.0.0.1", () => r()));
+      const streamerPort = (streamer.address() as { port: number }).port;
+
+      try {
+        const port = await startLlmProxy(`http://127.0.0.1:${streamerPort}`);
+        const resp = await makeProxyRequest(port, "/sess-stream/chat/completions", {
+          body: "{}",
+        });
+        expect(resp.status).toBe(200);
+        expect(resp.body).toContain("data: one");
+        expect(resp.body).toContain("data: two");
+      } finally {
+        await new Promise<void>((r) => streamer.close(() => r()));
+      }
+    });
+
+    it("does not crash the proxy when the upstream resets mid-stream", async () => {
+      // Upstream writes headers + a partial body, then destroys the socket to
+      // simulate a connection reset during a streaming response. Without an
+      // 'error' listener on the upstream response stream this would surface as
+      // an unhandled 'error' and crash the whole backend.
+      const flaky = http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write("data: partial\n\n");
+        res.socket?.destroy();
+      });
+      await new Promise<void>((r) => flaky.listen(0, "127.0.0.1", () => r()));
+      const flakyPort = (flaky.address() as { port: number }).port;
+
+      try {
+        const port = await startLlmProxy(`http://127.0.0.1:${flakyPort}`);
+        // The client request terminates abnormally (socket hang up); we only
+        // care that the proxy itself survives.
+        await makeProxyRequest(port, "/sess-flaky/chat/completions", {
+          body: "{}",
+        }).catch(() => {});
+        // If the proxy had crashed on an unhandled error, this worker would be
+        // dead and the assertion would never run.
+        expect(isProxyRunning()).toBe(true);
+      } finally {
+        await new Promise<void>((r) => flaky.close(() => r()));
+      }
+    });
+
+    it("aborts the upstream request when the client disconnects early", async () => {
+      let upstreamClosedEarly = false;
+      let resolveClosed: (() => void) | undefined;
+      const closedPromise = new Promise<void>((r) => (resolveClosed = r));
+
+      // Upstream that never responds; it records when its inbound connection
+      // closes (which happens when the proxy aborts the upstream request).
+      const hanging = http.createServer((req, _res) => {
+        req.on("close", () => {
+          upstreamClosedEarly = true;
+          resolveClosed?.();
+        });
+      });
+      await new Promise<void>((r) => hanging.listen(0, "127.0.0.1", () => r()));
+      const hangingPort = (hanging.address() as { port: number }).port;
+
+      try {
+        const port = await startLlmProxy(`http://127.0.0.1:${hangingPort}`);
+
+        const clientReq = http.request({
+          hostname: "127.0.0.1",
+          port,
+          path: "/sess-abort/chat/completions",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        clientReq.on("error", () => {});
+        clientReq.end("{}");
+
+        // Give the request time to reach the upstream, then disconnect.
+        await new Promise<void>((r) => setTimeout(r, 50));
+        clientReq.destroy();
+
+        // The proxy should abort the upstream request in response.
+        await Promise.race([
+          closedPromise,
+          new Promise<void>((_r, reject) =>
+            setTimeout(() => reject(new Error("upstream was not aborted in time")), 2000),
+          ),
+        ]);
+        expect(upstreamClosedEarly).toBe(true);
+      } finally {
+        await new Promise<void>((r) => hanging.close(() => r()));
+      }
+    });
+
+    it("does not double the slash when the upstream base has a trailing slash", async () => {
+      const port = await startLlmProxy(`http://127.0.0.1:${upstream.port}/v1/`);
+
+      await makeProxyRequest(port, "/sess-slash/chat/completions", { body: "{}" });
+
+      expect(upstream.receivedRequests).toHaveLength(1);
+      expect(upstream.receivedRequests[0].url).toBe("/v1/chat/completions");
+    });
+  });
 });

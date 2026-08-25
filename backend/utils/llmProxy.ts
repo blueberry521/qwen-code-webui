@@ -78,94 +78,159 @@ function handleProxyRequest(
   clientReq: http.IncomingMessage,
   clientRes: http.ServerResponse,
 ): void {
-  const reqUrl = clientReq.url || "";
+  // Wrap the whole handler: a synchronous throw here (e.g. `new URL(...)` on a
+  // malformed upstream, or an invalid X-Session-Id header value rejected by
+  // transport.request) would otherwise become an uncaughtException and crash
+  // the entire backend instead of failing this one request.
+  try {
+    const reqUrl = clientReq.url || "";
 
-  // Parse URL: /<sessionId>/v1/...
-  // Split on '/' - first element is empty (leading /)
-  const pathSegments = reqUrl.split("/");
-  // pathSegments[0] = '' (before leading /)
-  // pathSegments[1] = sessionId
-  // pathSegments[2+] = remaining path (v1/...)
+    // Parse URL: /<sessionId>/v1/...
+    // Split on '/' - first element is empty (leading /)
+    const pathSegments = reqUrl.split("/");
+    // pathSegments[0] = '' (before leading /)
+    // pathSegments[1] = sessionId
+    // pathSegments[2+] = remaining path (v1/...)
 
-  const sessionId = pathSegments[1];
-  const remainingPath = "/" + pathSegments.slice(2).join("/");
+    const sessionId = pathSegments[1];
+    // remainingPath always begins with "/", so it is never empty — only the
+    // "/" (no path after the sessionId) case needs rejecting.
+    const remainingPath = "/" + pathSegments.slice(2).join("/");
 
-  if (!sessionId || !remainingPath || remainingPath === "/") {
-    logger.chat.warn("LLM proxy: invalid request URL: {url}", { url: reqUrl });
-    clientRes.writeHead(400, { "Content-Type": "text/plain" });
-    clientRes.end("Invalid proxy URL format. Expected: /<sessionId>/v1/...");
-    return;
-  }
-
-  if (!upstreamBaseUrl) {
-    clientRes.writeHead(503, { "Content-Type": "text/plain" });
-    clientRes.end("Proxy upstream not configured");
-    return;
-  }
-
-  // Build upstream URL using string concatenation (matching OpenAI SDK behavior).
-  // Using new URL(path, base) would lose the upstream's path prefix, e.g.:
-  //   new URL("/v1/chat/completions", "http://host/custom/prefix") → "http://host/v1/chat/completions"
-  // String concatenation preserves it:
-  //   "http://host/custom/prefix" + "/v1/chat/completions" → "http://host/custom/prefix/v1/chat/completions"
-  // Note: remainingPath already includes the query string (if any) from the original URL
-  // since we built it from path segments. No need to append it separately.
-  const upstreamUrl = new URL(upstreamBaseUrl + remainingPath);
-
-  // Build headers for upstream request
-  const upstreamHeaders: Record<string, string | string[] | undefined> = {};
-  for (const [key, value] of Object.entries(clientReq.headers)) {
-    // Skip 'host' - it will be set correctly for the upstream
-    if (key.toLowerCase() === "host") continue;
-    // Skip 'connection' - not relevant for upstream
-    if (key.toLowerCase() === "connection") continue;
-    upstreamHeaders[key] = value;
-  }
-
-  // Add X-Session-Id header
-  upstreamHeaders["x-session-id"] = sessionId;
-
-  logger.chat.debug(
-    "LLM proxy: {method} {path} → {upstream} (session: {sessionId})",
-    {
-      method: clientReq.method,
-      path: remainingPath,
-      upstream: upstreamUrl.toString(),
-      sessionId,
-    },
-  );
-
-  // Determine whether to use http or https for upstream
-  const isHttps = upstreamUrl.protocol === "https:";
-  const transport = isHttps ? https : http;
-
-  const proxyReq = transport.request(
-    upstreamUrl,
-    {
-      method: clientReq.method,
-      headers: upstreamHeaders as Record<string, string>,
-    },
-    (proxyRes) => {
-      // Forward response headers to client
-      clientRes.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-      // Stream response body back to client
-      proxyRes.pipe(clientRes);
-    },
-  );
-
-  proxyReq.on("error", (err) => {
-    logger.chat.error(
-      "LLM proxy upstream error: {error} (session: {sessionId})",
-      { error: err.message, sessionId },
-    );
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(502, { "Content-Type": "text/plain" });
+    if (!sessionId || remainingPath === "/") {
+      logger.chat.warn("LLM proxy: invalid request URL: {url}", { url: reqUrl });
+      clientRes.writeHead(400, { "Content-Type": "text/plain" });
+      clientRes.end("Invalid proxy URL format. Expected: /<sessionId>/v1/...");
+      return;
     }
-    clientRes.end("Proxy upstream error: " + err.message);
-  });
 
-  // Stream request body to upstream
-  clientReq.pipe(proxyReq);
+    if (!upstreamBaseUrl) {
+      clientRes.writeHead(503, { "Content-Type": "text/plain" });
+      clientRes.end("Proxy upstream not configured");
+      return;
+    }
+
+    // Build upstream URL using string concatenation (matching OpenAI SDK behavior).
+    // Using new URL(path, base) would lose the upstream's path prefix, e.g.:
+    //   new URL("/v1/chat/completions", "http://host/custom/prefix") → "http://host/v1/chat/completions"
+    // String concatenation preserves it:
+    //   "http://host/custom/prefix" + "/v1/chat/completions" → "http://host/custom/prefix/v1/chat/completions"
+    // Strip a trailing slash from the base first so a base like "http://host/v1/"
+    // does not produce a doubled "//" in the forwarded path.
+    // Note: remainingPath already includes the query string (if any) from the original URL
+    // since we built it from path segments. No need to append it separately.
+    const base = upstreamBaseUrl.endsWith("/")
+      ? upstreamBaseUrl.slice(0, -1)
+      : upstreamBaseUrl;
+    const upstreamUrl = new URL(base + remainingPath);
+
+    // Build headers for upstream request
+    const upstreamHeaders: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of Object.entries(clientReq.headers)) {
+      // Skip 'host' - it will be set correctly for the upstream
+      if (key.toLowerCase() === "host") continue;
+      // Skip 'connection' - not relevant for upstream
+      if (key.toLowerCase() === "connection") continue;
+      upstreamHeaders[key] = value;
+    }
+
+    // Add X-Session-Id header
+    upstreamHeaders["x-session-id"] = sessionId;
+
+    logger.chat.debug(
+      "LLM proxy: {method} {path} → {upstream} (session: {sessionId})",
+      {
+        method: clientReq.method,
+        path: remainingPath,
+        upstream: upstreamUrl.toString(),
+        sessionId,
+      },
+    );
+
+    // Determine whether to use http or https for upstream
+    const isHttps = upstreamUrl.protocol === "https:";
+    const transport = isHttps ? https : http;
+
+    const proxyReq = transport.request(
+      upstreamUrl,
+      {
+        method: clientReq.method,
+        headers: upstreamHeaders as Record<string, string>,
+      },
+      (proxyRes) => {
+        // Guard the upstream RESPONSE stream: a mid-stream reset (common for
+        // long-lived SSE completions or an upstream restart) emits 'error' on
+        // proxyRes. `.pipe()` does NOT forward source errors, so without this
+        // listener the event is unhandled and crashes the backend. We cannot
+        // recover a half-sent stream, so tear the client response down.
+        proxyRes.on("error", (err) => {
+          logger.chat.error(
+            "LLM proxy: upstream response stream error: {error} (session: {sessionId})",
+            { error: err.message, sessionId },
+          );
+          clientRes.destroy(err);
+        });
+        // Forward response headers to client
+        clientRes.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        // Stream response body back to client
+        proxyRes.pipe(clientRes);
+      },
+    );
+
+    proxyReq.on("error", (err) => {
+      logger.chat.error(
+        "LLM proxy upstream error: {error} (session: {sessionId})",
+        { error: err.message, sessionId },
+      );
+      // The client response may already be gone (e.g. this error is the result
+      // of us aborting the upstream after the client disconnected). Writing to a
+      // destroyed response would throw, so bail out first.
+      if (clientRes.destroyed || clientRes.writableEnded) return;
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(502, { "Content-Type": "text/plain" });
+        clientRes.end("Proxy upstream error: " + err.message);
+      } else {
+        // Response already started streaming; the only honest signal is to break
+        // the connection so the client sees an incomplete stream.
+        clientRes.destroy(err);
+      }
+    });
+
+    // If the client request stream errors (CLI aborts mid-upload), tear down the
+    // upstream request instead of letting an unhandled 'error' crash the process.
+    clientReq.on("error", (err) => {
+      logger.chat.warn(
+        "LLM proxy: client request stream error: {error} (session: {sessionId})",
+        { error: err.message, sessionId },
+      );
+      proxyReq.destroy(err);
+    });
+
+    // If the client disconnects before the response completes (user cancels a
+    // streaming turn), abort the still-running upstream request so we don't keep
+    // streaming to a dead socket and leak the upstream connection.
+    clientRes.on("close", () => {
+      if (!clientRes.writableFinished && !proxyReq.destroyed) {
+        logger.chat.debug(
+          "LLM proxy: client disconnected before response completed; aborting upstream (session: {sessionId})",
+          { sessionId },
+        );
+        proxyReq.destroy();
+      }
+    });
+
+    // Stream request body to upstream
+    clientReq.pipe(proxyReq);
+  } catch (err) {
+    logger.chat.error("LLM proxy: unexpected error handling request: {error}", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (clientRes.destroyed || clientRes.writableEnded) return;
+    if (!clientRes.headersSent) {
+      clientRes.writeHead(500, { "Content-Type": "text/plain" });
+    }
+    clientRes.end("Proxy internal error");
+  }
 }
 
 /**
@@ -212,14 +277,18 @@ export function stopLlmProxy(): Promise<void> {
       proxyServer = null;
       proxyPort = null;
       upstreamBaseUrl = null;
+      // Force close after 5 seconds if connections are still open (e.g. a
+      // long-lived SSE stream). unref() so this timer never keeps the process
+      // alive on its own, and clear it once close() completes normally.
+      const forceTimer = setTimeout(() => {
+        server.closeAllConnections?.();
+      }, 5000);
+      forceTimer.unref?.();
       server.close(() => {
+        clearTimeout(forceTimer);
         logger.chat.info("LLM proxy stopped");
         resolve();
       });
-      // Force close after 5 seconds if connections are still open
-      setTimeout(() => {
-        server.closeAllConnections?.();
-      }, 5000);
     } else {
       resolve();
     }
