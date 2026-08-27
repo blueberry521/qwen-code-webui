@@ -483,21 +483,25 @@ async function executeQwenCommand(
         if (forkId && !agentLoopStates.has(forkId)) {
           agentLoopStates.set(forkId, ls);
         }
-        const loopResult = checkLoop(sdkMessage, ls);
-        if (loopResult) {
-          logger.chat.error(
-            "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
-            { fingerprint: loopResult.fingerprint, count: loopResult.count },
-          );
-          abortController!.abort();
-          const errorMessage = loopResult.fingerprint === "input_closed"
-            ? "CLI session ended unexpectedly. Please send a new message."
-            : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
-          if (!enqueue({
-            type: "error",
-            error: errorMessage,
-          })) break;
-          break;
+        // Skip loop detection in YOLO mode - allow autonomous iterative workflows
+        // (e.g., fix_issue skill: test → fix → test again)
+        if (mappedPermissionMode !== "yolo") {
+          const loopResult = checkLoop(sdkMessage, ls);
+          if (loopResult) {
+            logger.chat.error(
+              "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
+              { fingerprint: loopResult.fingerprint, count: loopResult.count },
+            );
+            abortController!.abort();
+            const errorMessage = loopResult.fingerprint === "input_closed"
+              ? "CLI session ended unexpectedly. Please send a new message."
+              : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
+            if (!enqueue({
+              type: "error",
+              error: errorMessage,
+            })) break;
+            break;
+          }
         }
 
         logger.chat.debug("Qwen SDK Message: {sdkMessage}", { sdkMessage });
