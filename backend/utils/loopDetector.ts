@@ -3,7 +3,7 @@
  *
  * Detects repeated error patterns in SDK messages and aborts the CLI process
  * before it enters an infinite loop. This is a failsafe — the frontend also
- * has loop detection, but if it fails (e.g., status:"cancelled" bypass), the
+ * has loop detection, but if it fails (e.g. status:"cancelled" bypass), the
  * backend catches it here.
  *
  * Two-tier detection:
@@ -19,14 +19,25 @@ const LOOP_ERROR_PATTERNS: [string, RegExp][] = [
   ["stdin_closed", /stdin.*closed/i],
 ];
 
-const MAX_FINGERPRINT_LEN = 200;
+/**
+ * Simple hash function (djb2 algorithm) for fingerprint generation.
+ * Returns a base36 string for compact representation.
+ * This fixes #224 where 200-char truncation caused false loop detection.
+ */
+function simpleHash(str: string): string {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 33) ^ str.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
 
 /**
  * Extract an error fingerprint from an SDK message.
  * Returns null if the message is not an error.
  *
  * Known patterns are normalized to a canonical name (e.g. "input_closed").
- * Unknown errors use lowercased content as fingerprint.
+ * Unknown errors use a hash of the full normalized content (#224).
  *
  * CLI stdout format (local): type "user", error at msg.message.content[].content, is_error: true
  * Session log format (remote): type "tool_result", error at msg.message.parts[].functionResponse.response.error
@@ -89,8 +100,9 @@ export function extractErrorFingerprint(sdkMessage: unknown): string | null {
     if (pattern.test(lower)) return name;
   }
 
-  // Unknown error — use content fingerprint
-  return lower.substring(0, MAX_FINGERPRINT_LEN);
+  // Unknown error — use full content hash (#224)
+  const normalized = lower.replace(/\s+/g, " ").trim();
+  return simpleHash(normalized);
 }
 
 export interface LoopState {
