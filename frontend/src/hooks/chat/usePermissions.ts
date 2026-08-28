@@ -348,9 +348,10 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
         result.output.toLowerCase().includes("not found");
 
       if (!isError && !hasErrorKeywords) {
-        // Clear tracking for successful results
-        const key = generateCommandKey(toolName, input, agentId);
-        commandResultsRef.current.delete(key);
+        // Clear ALL tracking for any successful tool call.
+        // This recognizes that any success indicates workflow progress,
+        // not just progress for the specific tool that succeeded.
+        commandResultsRef.current.clear();
         return null;
       }
 

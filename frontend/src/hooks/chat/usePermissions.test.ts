@@ -428,6 +428,59 @@ describe("usePermissions - Command Result Loop Detection", () => {
     expect(loopRequest).toBeNull();
   });
 
+  it("should clear ALL tracking for any successful tool call (cross-tool progress)", () => {
+    const { result } = renderHook(() => usePermissions());
+
+    // First: run_shell_command error
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "npm test" },
+        { exitCode: 1, output: "Error: test failed" }
+      );
+    });
+
+    // Second: run_shell_command error again
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "npm test" },
+        { exitCode: 1, output: "Error: test failed" }
+      );
+    });
+
+    // Third: different tool (edit) succeeds - should clear ALL tracking
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "edit",
+        { file_path: "/src/file.ts" },
+        { exitCode: 0, output: "File edited successfully" }
+      );
+    });
+
+    // Fourth: run_shell_command error again - count should be 1 (reset by edit success)
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "npm test" },
+        { exitCode: 1, output: "Error: test failed" }
+      );
+    });
+
+    // Fifth: run_shell_command error again - count should be 2
+    let loopRequest: CommandLoopRequest | null = null;
+    act(() => {
+      loopRequest = result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "npm test" },
+        { exitCode: 1, output: "Error: test failed" }
+      );
+    });
+
+    // Should NOT trigger loop because counter was reset by edit success
+    expect(loopRequest).toBeNull();
+  });
+
   it("should not detect loop for excluded tools", () => {
     const { result } = renderHook(() => usePermissions());
 
