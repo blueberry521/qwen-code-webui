@@ -1372,7 +1372,7 @@ export function ChatPage() {
     : undefined;
 
   const handleHistoryClick = useCallback(() => {
-    const searchParams = new URLSearchParams();
+    const searchParams = new URLSearchParams(window.location.search);
     searchParams.set("view", "history");
     navigate({ search: searchParams.toString() });
   }, [navigate]);
@@ -1473,7 +1473,7 @@ export function ChatPage() {
   }, [navigate]);
 
   const handleBackToHistory = useCallback(() => {
-    const searchParams = new URLSearchParams();
+    const searchParams = new URLSearchParams(window.location.search);
     searchParams.set("view", "history");
     navigate({ search: searchParams.toString() });
   }, [navigate]);

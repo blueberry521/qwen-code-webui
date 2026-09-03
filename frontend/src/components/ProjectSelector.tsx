@@ -131,7 +131,7 @@ export function ProjectSelector() {
     const normalizedPath = projectPath.startsWith("/")
       ? projectPath
       : `/${projectPath}`;
-    navigate(`/projects${normalizedPath}`);
+    navigate(`/projects${normalizedPath}${window.location.search}`);
   }, [navigate]);
 
   // Auto-focus the project list container when loaded to enable keyboard navigation
