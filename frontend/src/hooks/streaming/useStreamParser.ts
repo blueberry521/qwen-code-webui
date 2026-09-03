@@ -295,11 +295,18 @@ export function useStreamParser() {
           const req = data.request;
           const requestId = data.request_id || "";
           if (req.subtype === "can_use_tool" && req.tool_name) {
+            // Transform permission_suggestions to suggestions format
+            const suggestions = req.permission_suggestions?.map(s => ({
+              type: s.rule,
+              label: s.rule,
+              description: s.description,
+            })) || [];
+            
             context.onPermissionRequest({
               permissionId: requestId,
               toolName: req.tool_name,
               toolInput: req.input || {},
-              suggestions: req.permission_suggestions || [],
+              suggestions,
               autoApproveMs: req.auto_approve_ms,
               confirmationType: req.confirmation_type as "default" | "ask_user_question" | undefined,
               questions: req.questions || [],

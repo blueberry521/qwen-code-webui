@@ -402,7 +402,8 @@ describe("useStreamParser", () => {
         toolInput: { file_path: "/tmp/test.txt", content: "hello" },
         suggestions: [
           {
-            rule: "allow_write",
+            type: "allow_write",
+            label: "allow_write",
             description: "Allow write to /tmp",
           },
         ],
