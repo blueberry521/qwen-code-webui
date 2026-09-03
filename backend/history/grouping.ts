@@ -25,13 +25,17 @@ export function groupConversations(
   });
 
   // Remove conversations whose message ID sets are subsets of larger ones
+  // Note: Only attempt subset-dedup when the current conversation has message IDs.
+  // CLI sessions have no message.id (it is null), so messageIds is empty.
+  // An empty set is a subset of everything, which would incorrectly drop all
+  // CLI sessions. Instead, keep id-less conversations so each file shows as its own session.
   const uniqueConversations: ConversationFile[] = [];
 
   for (const currentConv of sortedConversations) {
-    // Check if this conversation's message IDs are a subset of any existing unique conversation
-    const isSubsetOfExisting = uniqueConversations.some((existingConv) =>
-      isSubset(currentConv.messageIds, existingConv.messageIds),
-    );
+    const isSubsetOfExisting = currentConv.messageIds.size > 0 &&
+      uniqueConversations.some((existingConv) =>
+        isSubset(currentConv.messageIds, existingConv.messageIds),
+      );
 
     if (!isSubsetOfExisting) {
       // This is either a unique conversation or the "final" version of a continued conversation
