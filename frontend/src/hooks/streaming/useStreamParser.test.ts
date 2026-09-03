@@ -368,6 +368,119 @@ describe("useStreamParser", () => {
 
       warnSpy.mockRestore();
     });
+
+    it("should forward control_request messages to onPermissionRequest (local mode)", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "control_request",
+          request_id: "req-456",
+          request: {
+            subtype: "can_use_tool",
+            tool_name: TOOL_NAMES.WRITE,
+            input: { file_path: "/tmp/test.txt", content: "hello" },
+            permission_suggestions: [
+              {
+                rule: "allow_write",
+                description: "Allow write to /tmp",
+              },
+            ],
+            auto_approve_ms: 28000,
+            confirmation_type: "default",
+          },
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).toHaveBeenCalledWith({
+        permissionId: "req-456",
+        toolName: TOOL_NAMES.WRITE,
+        toolInput: { file_path: "/tmp/test.txt", content: "hello" },
+        suggestions: [
+          {
+            rule: "allow_write",
+            description: "Allow write to /tmp",
+          },
+        ],
+        autoApproveMs: 28000,
+        confirmationType: "default",
+        questions: [],
+      });
+    });
+
+    it("should handle control_request with missing request_id", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "control_request",
+          request: {
+            subtype: "can_use_tool",
+            tool_name: TOOL_NAMES.READ,
+            input: { file_path: "/tmp/test.txt" },
+          },
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).toHaveBeenCalledWith({
+        permissionId: "",
+        toolName: TOOL_NAMES.READ,
+        toolInput: { file_path: "/tmp/test.txt" },
+        suggestions: [],
+        autoApproveMs: undefined,
+        confirmationType: undefined,
+        questions: [],
+      });
+    });
+
+    it("should ignore control_request with non-can_use_tool subtype", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "control_request",
+          request_id: "req-789",
+          request: {
+            subtype: "other_subtype",
+            tool_name: TOOL_NAMES.BASH,
+          },
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).not.toHaveBeenCalled();
+    });
+
+    it("should ignore control_request with missing tool_name", () => {
+      const onPermissionRequest = vi.fn();
+      mockContext.onPermissionRequest = onPermissionRequest;
+
+      const { result } = renderHook(() => useStreamParser());
+
+      result.current.processStreamLine(
+        JSON.stringify({
+          type: "control_request",
+          request_id: "req-101",
+          request: {
+            subtype: "can_use_tool",
+          },
+        }),
+        mockContext,
+      );
+
+      expect(onPermissionRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe("Stream Line Processing and Error Handling", () => {

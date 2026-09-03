@@ -290,6 +290,21 @@ export function useStreamParser() {
               questions: data.questions,
             });
           }
+        } else if (data.type === "control_request" && data.request && context.onPermissionRequest) {
+          // Local mode permission request handling
+          const req = data.request;
+          const requestId = data.request_id || "";
+          if (req.subtype === "can_use_tool" && req.tool_name) {
+            context.onPermissionRequest({
+              permissionId: requestId,
+              toolName: req.tool_name,
+              toolInput: req.input || {},
+              suggestions: req.permission_suggestions || [],
+              autoApproveMs: req.auto_approve_ms,
+              confirmationType: req.confirmation_type as "default" | "ask_user_question" | undefined,
+              questions: req.questions || [],
+            });
+          }
         } else if (data.type === "error") {
           const errorMessage: SystemMessage = {
             type: "error",
