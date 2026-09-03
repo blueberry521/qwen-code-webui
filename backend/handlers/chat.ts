@@ -13,9 +13,11 @@ import {
 } from "../utils/cliProcessRegistry.ts";
 import { loadQwenQuery } from "../utils/qwenSdk.ts";
 import { getProxyBaseUrl, isProxyRunning } from "../utils/llmProxy.ts";
+import { getEnv } from "../utils/os.ts";
 import type { PendingPermission } from "./permission.ts";
 import { preserveToolInput } from "./toolInputSnapshot.ts";
 import type { ServerResponse } from "node:http";
+import type { AppConfig } from "../types.ts";
 
 /** Track number of concurrent chat requests for diagnostics */
 let _activeChatCount = 0;
@@ -117,6 +119,93 @@ const READ_ONLY_TOOLS = new Set(["read_file", "glob", "grep_search", "list_direc
 // Currently empty - ask_user_question now has full dialog support.
 const AUTO_APPROVE_NO_DIALOG_TOOLS: Set<string> = new Set([]);
 
+/**
+ * Check if running in Open-ACE integration mode.
+ * Integration mode is enabled when either:
+ * - openaceApiUrl is configured (CLI --openace-api-url or OPENACE_API_URL env)
+ * - OPENAI_BASE_URL is set (LLM proxy started for session header injection)
+ */
+function isIntegratedMode(config: AppConfig): boolean {
+  return !!config.openaceApiUrl || !!getEnv("OPENAI_BASE_URL");
+}
+
+/**
+ * Get Open-ACE session API URL from config.
+ * Returns null if not configured.
+ */
+function getOpenAceSessionApi(config: AppConfig): string | null {
+  const baseUrl = config.openaceApiUrl || getEnv("OPENACE_API_URL");
+  if (!baseUrl) return null;
+  return `${baseUrl}/api/workspace/session`;
+}
+
+/**
+ * Register session with Open-ACE before first request.
+ * This ensures the session ID is known to Open-ACE when the first LLM request
+ * arrives with X-Session-Id header.
+ *
+ * @returns true if registration succeeded, false otherwise
+ */
+async function registerWithOpenAce(
+  sessionId: string,
+  projectPath: string,
+  config: AppConfig,
+  token?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const sessionApi = getOpenAceSessionApi(config);
+  if (!sessionApi) {
+    return { success: false, error: "Open-ACE API not configured" };
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(sessionApi, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        tool_name: "qwen-code",
+        session_type: "chat",
+        project_path: projectPath,
+        title: `Session in ${projectPath.split("/").pop()}`,
+        session_id: sessionId,
+      }),
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Open-ACE registration failed: ${response.status} ${response.statusText}`,
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Network error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * Generate a session ID that conforms to Open-ACE constraints:
+ * - Character set: [alnum-_:] (alphanumeric, hyphen, underscore, colon)
+ * - Length: ≤100 characters
+ *
+ * UUID v4 format satisfies these constraints:
+ * - Contains: a-z, 0-9, and hyphens
+ * - Length: 36 characters
+ */
+function generateSessionId(): string {
+  return crypto.randomUUID();
+}
+
 function extractBaseCommand(command: string): string {
   return command.trim().split(/\s+/)[0] || "";
 }
@@ -138,6 +227,7 @@ async function executeQwenCommand(
   permissionMode?: string,
   model?: string,
   authType?: AuthType,
+  isNewSession?: boolean,
 ): Promise<void> {
   let abortController: AbortController | undefined;
   let onAbort: (() => void) | undefined;
@@ -416,17 +506,9 @@ async function executeQwenCommand(
     // the X-Session-Id header for proper session attribution.
     // @see https://github.com/ivycomputing/qwen-code-webui/issues/220
     //
-    // First-turn guard: we intentionally route through the proxy ONLY when we
-    // already have a sessionId. A brand-new conversation has none until the CLI
-    // returns it in the init message (and the frontend then registers it with
-    // Open-ACE via create_session). Injecting an as-yet-unregistered id would
-    // make the Open-ACE proxy reject the request with 404 session_not_found and
-    // break the model call; omitting the header instead lets Open-ACE fall back
-    // to the user-level aggregate session (the request succeeds, though the
-    // first turn is attributed to the aggregate rather than this session).
-    // Fully closing this first-turn gap requires owning the session id up front
-    // (SDK `sessionId` option) and awaiting Open-ACE registration before the
-    // first request — tracked separately from this proxy change.
+    // Session ID is now generated upfront for new sessions in integration mode,
+    // and registered with Open-ACE before the first request. This ensures the
+    // first turn gets proper session attribution (issue #222).
     const cliEnv: Record<string, string> = {};
     if (sessionId && isProxyRunning()) {
       const proxyBaseUrl = getProxyBaseUrl(sessionId);
@@ -445,7 +527,12 @@ async function executeQwenCommand(
         options: {
           abortController: abortController!,
           pathToQwenExecutable: cliPath,
-          ...(sessionId ? { resume: sessionId } : {}),
+          // Use sessionId for new sessions (SDK generates/uses the ID),
+          // resume for existing sessions (reusing previous session ID).
+          // This ensures session ID consistency between our registration
+          // and the CLI's internal session management.
+          ...(isNewSession && sessionId ? { sessionId } : {}),
+          ...(!isNewSession && sessionId ? { resume: sessionId } : {}),
           ...(allowedTools ? { allowedTools } : {}),
           ...(workingDirectory ? { cwd: workingDirectory } : {}),
           ...(mappedPermissionMode ? { permissionMode: mappedPermissionMode } : {}),
@@ -596,7 +683,9 @@ export async function handleChatRequest(
   pendingPermissions: Map<string, PendingPermission>,
 ) {
   const chatRequest: ChatRequest = await c.req.json();
-  const { cliPath, authType } = c.var.config as { cliPath: string; authType?: AuthType };
+  const config = c.var.config as AppConfig;
+  const { cliPath } = config;
+  const authType = config.authType as AuthType | undefined;
   const outgoing = (c.env as { outgoing?: ServerResponse })?.outgoing;
 
   logger.chat.debug(
@@ -720,6 +809,48 @@ export async function handleChatRequest(
       }, KEEPALIVE_INTERVAL_MS);
 
       try {
+        // Open-ACE integration: pre-register session before first request
+        // This ensures the session ID is known to Open-ACE when the first LLM request
+        // arrives with X-Session-Id header, avoiding 404 session_not_found errors.
+        // For new sessions in integration mode, we generate the session ID upfront
+        // and register it with Open-ACE before starting the CLI.
+        let effectiveSessionId = chatRequest.sessionId;
+        const isNewSession = !chatRequest.sessionId;
+
+        if (isNewSession && isIntegratedMode(config)) {
+          // Generate session ID upfront for new sessions in integration mode
+          effectiveSessionId = generateSessionId();
+          logger.chat.debug(
+            "Generated session ID for new session in integration mode: {sessionId}",
+            { sessionId: effectiveSessionId },
+          );
+
+          // Attempt to register with Open-ACE (non-blocking on failure)
+          // Extract token from request for authentication
+          const token = c.req.header?.("Authorization")?.replace("Bearer ", "") ||
+                       c.req.query?.("token");
+
+          const registerResult = await registerWithOpenAce(
+            effectiveSessionId,
+            chatRequest.workingDirectory || process.cwd(),
+            config,
+            token,
+          );
+
+          if (registerResult.success) {
+            logger.chat.info(
+              "Registered session with Open-ACE: {sessionId}",
+              { sessionId: effectiveSessionId },
+            );
+          } else {
+            // Log warning but proceed - don't block user on registration failure
+            logger.chat.warn(
+              "Failed to register session with Open-ACE: {error}. Proceeding without session attribution.",
+              { error: registerResult.error, sessionId: effectiveSessionId },
+            );
+          }
+        }
+
         await executeQwenCommand(
           chatRequest.message,
           chatRequest.requestId,
@@ -727,12 +858,13 @@ export async function handleChatRequest(
           pendingPermissions,
           enqueue,
           cliPath,
-          chatRequest.sessionId,
+          effectiveSessionId,
           chatRequest.allowedTools,
           chatRequest.workingDirectory,
           chatRequest.permissionMode,
           chatRequest.model,
           authType,
+          isNewSession, // Pass flag to indicate new session
         );
         clearInterval(keepaliveId);
         controller.close();
