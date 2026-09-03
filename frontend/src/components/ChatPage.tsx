@@ -1128,6 +1128,18 @@ export function ChatPage() {
     resetDenialCounter();
     clearNotification();
 
+    // In remote mode, send permission response to the remote agent
+    if (isRemoteWorkspace) {
+      remoteChat.sendPermissionResponse(
+        permissionRequest.requestId || "",
+        "allow",
+        undefined,
+        permissionRequest.toolName
+      );
+      closePermissionRequest();
+      return;
+    }
+
     // Defensive guard: the UI only renders "allow all" for proactive requests.
     if (!permissionRequest.permissionId) {
       closePermissionRequest();
@@ -1158,6 +1170,8 @@ export function ChatPage() {
     resetDenialCounter,
     clearNotification,
     handlePermissionAbort,
+    isRemoteWorkspace,
+    remoteChat,
   ]);
 
   const handlePermissionDeny = useCallback(async () => {
