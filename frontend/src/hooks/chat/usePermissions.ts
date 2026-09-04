@@ -293,12 +293,13 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
 
   /**
    * Generate a key for command identification, scoped per agentId.
-   * When agentId is provided (fork agent), it becomes a key prefix so
-   * each agent's loop counters are fully independent (#140).
+   * Every key carries an explicit scope prefix ("__main__:" or "<agentId>:")
+   * so each agent's loop counters are fully independent (#140) and a reset
+   * can target exactly one agent's keys (#225).
    */
   const generateCommandKey = useCallback(
     (toolName: string, input: Record<string, unknown>, agentId?: string): string => {
-      const prefix = agentId ? `${agentId}:` : "";
+      const prefix = `${agentId ?? "__main__"}:`;
       // For shell commands, use the command string
       if (input.command && typeof input.command === "string") {
         // Normalize command: remove path variations, keep core structure
@@ -348,10 +349,19 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
         result.output.toLowerCase().includes("not found");
 
       if (!isError && !hasErrorKeywords) {
-        // Clear ALL tracking for any successful tool call.
-        // This recognizes that any success indicates workflow progress,
-        // not just progress for the specific tool that succeeded.
-        commandResultsRef.current.clear();
+        // A success means this agent is making progress: reset its loop
+        // counters (across tools), but leave other agents' counters intact
+        // (#140 per-agent isolation — a fork's success must not mask another
+        // fork's genuine loop). Tradeoff: an agent that alternates a
+        // successful no-op with the same failing command resets its own
+        // counter every cycle and never trips detection; accepted so
+        // iterative workflows aren't blocked (#225).
+        const scopePrefix = `${agentId ?? "__main__"}:`;
+        for (const key of commandResultsRef.current.keys()) {
+          if (key.startsWith(scopePrefix)) {
+            commandResultsRef.current.delete(key);
+          }
+        }
         return null;
       }
 
