@@ -38,6 +38,12 @@ const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
  */
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
+/** Bound registration so an unavailable Open-ACE API cannot hang chat. */
+const OPENACE_REGISTRATION_TIMEOUT_MS = 10_000;
+
+/** Keep best-effort cleanup bounded after an ambiguous registration failure. */
+const OPENACE_CLEANUP_TIMEOUT_MS = 3_000;
+
 /**
  * Safety timeout for canUseTool permission prompts.
  *
@@ -121,22 +127,65 @@ const AUTO_APPROVE_NO_DIALOG_TOOLS: Set<string> = new Set([]);
 
 /**
  * Check if running in Open-ACE integration mode.
- * Integration mode is enabled when either:
- * - openaceApiUrl is configured (CLI --openace-api-url or OPENACE_API_URL env)
- * - OPENAI_BASE_URL is set (LLM proxy started for session header injection)
+ * OPENAI_BASE_URL alone is not sufficient because standalone installations
+ * may use an arbitrary OpenAI-compatible endpoint.
  */
-function isIntegratedMode(config: AppConfig): boolean {
-  return !!config.openaceApiUrl || !!getEnv("OPENAI_BASE_URL");
+export function isIntegratedMode(config: AppConfig): boolean {
+  return !!(config.openaceApiUrl || getEnv("OPENACE_API_URL"));
 }
 
 /**
  * Get Open-ACE session API URL from config.
  * Returns null if not configured.
  */
-function getOpenAceSessionApi(config: AppConfig): string | null {
+export function getOpenAceSessionApi(config: AppConfig): string | null {
   const baseUrl = config.openaceApiUrl || getEnv("OPENACE_API_URL");
   if (!baseUrl) return null;
-  return `${baseUrl}/api/workspace/session`;
+  return `${baseUrl.replace(/\/+$/, "")}/api/workspace/sessions`;
+}
+
+async function cleanupOpenAceSession(
+  sessionId: string,
+  config: AppConfig,
+  token?: string,
+): Promise<void> {
+  const sessionApi = getOpenAceSessionApi(config);
+  if (!sessionApi) return;
+
+  const cleanupController = new AbortController();
+  const timeoutId = setTimeout(
+    () => cleanupController.abort(),
+    OPENACE_CLEANUP_TIMEOUT_MS,
+  );
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  try {
+    const response = await fetch(
+      `${sessionApi}/${encodeURIComponent(sessionId)}`,
+      {
+        method: "DELETE",
+        headers,
+        signal: cleanupController.signal,
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      logger.chat.warn(
+        "Failed to clean up an unconfirmed Open-ACE session: HTTP {status}",
+        { status: response.status, sessionId },
+      );
+    }
+  } catch (error) {
+    logger.chat.warn(
+      "Failed to clean up an unconfirmed Open-ACE session: {error}",
+      {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId,
+      },
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -146,11 +195,12 @@ function getOpenAceSessionApi(config: AppConfig): string | null {
  *
  * @returns true if registration succeeded, false otherwise
  */
-async function registerWithOpenAce(
+export async function registerWithOpenAce(
   sessionId: string,
   projectPath: string,
   config: AppConfig,
   token?: string,
+  signal?: AbortSignal,
 ): Promise<{ success: boolean; error?: string }> {
   const sessionApi = getOpenAceSessionApi(config);
   if (!sessionApi) {
@@ -164,10 +214,23 @@ async function registerWithOpenAce(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const registrationController = new AbortController();
+  const abortRegistration = () => registrationController.abort();
+  if (signal?.aborted) {
+    registrationController.abort();
+  } else {
+    signal?.addEventListener("abort", abortRegistration, { once: true });
+  }
+  const timeoutId = setTimeout(abortRegistration, OPENACE_REGISTRATION_TIMEOUT_MS);
+  let registrationAttempted = false;
+  let registrationConfirmed = false;
+
   try {
+    registrationAttempted = true;
     const response = await fetch(sessionApi, {
       method: "POST",
       headers,
+      signal: registrationController.signal,
       body: JSON.stringify({
         tool_name: "qwen-code",
         session_type: "chat",
@@ -184,12 +247,41 @@ async function registerWithOpenAce(
       };
     }
 
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return {
+        success: false,
+        error: "Open-ACE registration returned an invalid response",
+      };
+    }
+    const registration = payload as {
+      success?: boolean;
+      data?: { session_id?: string };
+    };
+    if (registration.success !== true || registration.data?.session_id !== sessionId) {
+      return {
+        success: false,
+        error: "Open-ACE registration response did not confirm the requested session",
+      };
+    }
+
+    registrationConfirmed = true;
     return { success: true };
   } catch (error) {
     return {
       success: false,
-      error: `Network error: ${error instanceof Error ? error.message : String(error)}`,
+      error: registrationController.signal.aborted
+        ? "Open-ACE registration was cancelled or timed out"
+        : `Network error: ${error instanceof Error ? error.message : String(error)}`,
     };
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", abortRegistration);
+    if (registrationAttempted && !registrationConfirmed) {
+      await cleanupOpenAceSession(sessionId, config, token);
+    }
   }
 }
 
@@ -764,6 +856,7 @@ export async function handleChatRequest(
   const encoder = new TextEncoder();
 
   let keepaliveId: ReturnType<typeof setInterval> | undefined;
+  let registrationAbortController: AbortController | undefined;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -825,17 +918,33 @@ export async function handleChatRequest(
             { sessionId: effectiveSessionId },
           );
 
-          // Attempt to register with Open-ACE (non-blocking on failure)
+          // Register before starting the CLI. Sending an unregistered session ID
+          // would make Open-ACE reject the subsequent model request with 404.
           // Extract token from request for authentication
           const token = c.req.header?.("Authorization")?.replace("Bearer ", "") ||
                        c.req.query?.("token");
 
-          const registerResult = await registerWithOpenAce(
-            effectiveSessionId,
-            chatRequest.workingDirectory || process.cwd(),
-            config,
-            token,
-          );
+          registrationAbortController = new AbortController();
+          const requestSignal = c.req.raw?.signal;
+          const abortOnRequestClose = () => registrationAbortController?.abort();
+          if (requestSignal?.aborted) {
+            registrationAbortController.abort();
+          } else {
+            requestSignal?.addEventListener("abort", abortOnRequestClose, { once: true });
+          }
+          let registerResult: { success: boolean; error?: string };
+          try {
+            registerResult = await registerWithOpenAce(
+              effectiveSessionId,
+              chatRequest.workingDirectory || process.cwd(),
+              config,
+              token,
+              registrationAbortController.signal,
+            );
+          } finally {
+            requestSignal?.removeEventListener("abort", abortOnRequestClose);
+            registrationAbortController = undefined;
+          }
 
           if (registerResult.success) {
             logger.chat.info(
@@ -843,11 +952,11 @@ export async function handleChatRequest(
               { sessionId: effectiveSessionId },
             );
           } else {
-            // Log warning but proceed - don't block user on registration failure
             logger.chat.warn(
-              "Failed to register session with Open-ACE: {error}. Proceeding without session attribution.",
+              "Failed to register session with Open-ACE: {error}. Aborting model request.",
               { error: registerResult.error, sessionId: effectiveSessionId },
             );
+            throw new Error("Unable to register this session with Open-ACE. Please retry.");
           }
         }
 
@@ -881,6 +990,8 @@ export async function handleChatRequest(
     },
     cancel() {
       clearInterval(keepaliveId);
+      registrationAbortController?.abort();
+      registrationAbortController = undefined;
       const ac = requestAbortControllers.get(chatRequest.requestId);
       if (ac) {
         // 检查是否有属于当前请求的 pending permissions
