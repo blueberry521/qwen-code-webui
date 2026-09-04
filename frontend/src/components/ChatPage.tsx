@@ -1128,11 +1128,13 @@ export function ChatPage() {
     resetDenialCounter();
     clearNotification();
 
-    // In remote mode, send permission response to the remote agent
+    // In remote mode, "Allow All" must persist like the local flow (which
+    // stores the bare tool name), so send allow-permanent rather than a
+    // one-shot allow.
     if (isRemoteWorkspace) {
       remoteChat.sendPermissionResponse(
         permissionRequest.requestId || "",
-        "allow",
+        "allow-permanent",
         undefined,
         permissionRequest.toolName
       );
