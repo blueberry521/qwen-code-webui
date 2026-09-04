@@ -43,6 +43,17 @@ function simpleHash(str: string): string {
  * Session log format (remote): type "tool_result", error at msg.message.parts[].functionResponse.response.error
  */
 export function extractErrorFingerprint(sdkMessage: unknown): string | null {
+  return extractError(sdkMessage)?.fingerprint ?? null;
+}
+
+/**
+ * Extract the fingerprint plus a short snippet of the normalized error content.
+ * The snippet keeps logs readable now that unknown errors surface as opaque
+ * hashes (#224).
+ */
+function extractError(
+  sdkMessage: unknown,
+): { fingerprint: string; preview: string } | null {
   const msg = sdkMessage as Record<string, unknown>;
   let errorContent: string | null = null;
 
@@ -94,15 +105,19 @@ export function extractErrorFingerprint(sdkMessage: unknown): string | null {
 
   if (!errorContent) return null;
 
-  // Check known patterns first — normalize to canonical name
+  // Known patterns are matched on the raw content; unknown errors hash the
+  // full normalized content (#224) — the preview is only for log readability.
   const lower = errorContent.toLowerCase();
+  const normalized = lower.replace(/\s+/g, " ").trim();
+  const preview = normalized.slice(0, 60);
+
+  // Check known patterns first — normalize to canonical name
   for (const [name, pattern] of LOOP_ERROR_PATTERNS) {
-    if (pattern.test(lower)) return name;
+    if (pattern.test(lower)) return { fingerprint: name, preview };
   }
 
   // Unknown error — use full content hash (#224)
-  const normalized = lower.replace(/\s+/g, " ").trim();
-  return simpleHash(normalized);
+  return { fingerprint: simpleHash(normalized), preview };
 }
 
 export interface LoopState {
@@ -129,15 +144,16 @@ export function checkLoop(
   sdkMessage: unknown,
   state: LoopState,
   threshold: number = DEFAULT_THRESHOLD,
-): { detected: true; fingerprint: string; count: number } | null {
-  const fingerprint = extractErrorFingerprint(sdkMessage);
+): { detected: true; fingerprint: string; count: number; preview: string } | null {
+  const error = extractError(sdkMessage);
 
-  if (!fingerprint) {
+  if (!error) {
     // Non-error message — do NOT reset counter.
     // In a real loop, error messages are interleaved with assistant messages,
     // so resetting on non-errors would prevent detection.
     return null;
   }
+  const { fingerprint } = error;
 
   const effectiveThreshold = FATAL_FINGERPRINTS.has(fingerprint) ? 1 : threshold;
   const now = Date.now();
@@ -155,7 +171,7 @@ export function checkLoop(
   }
 
   if (state.errorCount >= effectiveThreshold) {
-    return { detected: true, fingerprint, count: state.errorCount };
+    return { detected: true, fingerprint, count: state.errorCount, preview: error.preview };
   }
 
   return null;
