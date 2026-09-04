@@ -131,7 +131,14 @@ export function ProjectSelector() {
     const normalizedPath = projectPath.startsWith("/")
       ? projectPath
       : `/${projectPath}`;
-    navigate(`/projects${normalizedPath}${window.location.search}`);
+    // Preserve remote-context params (workspaceType, machineId, token, ...) but
+    // drop project-scoped ones so the newly selected project doesn't inherit
+    // another project's session or view state.
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.delete("sessionId");
+    searchParams.delete("view");
+    const qs = searchParams.toString();
+    navigate(`/projects${normalizedPath}${qs ? `?${qs}` : ""}`);
   }, [navigate]);
 
   // Auto-focus the project list container when loaded to enable keyboard navigation
