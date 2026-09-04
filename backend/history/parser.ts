@@ -153,11 +153,19 @@ async function parseHistoryFile(
 async function getHistoryFiles(historyDir: string): Promise<string[]> {
   try {
     const files: string[] = [];
+    // A session id maps to exactly one file; if the same id somehow exists in
+    // both the root directory and chats/, keep only the first (root) entry.
+    const seenFileNames = new Set<string>();
+    const pushFile = (dir: string, fileName: string) => {
+      if (seenFileNames.has(fileName)) return;
+      seenFileNames.add(fileName);
+      files.push(`${dir}/${fileName}`);
+    };
 
     // Scan root directory for JSONL files
     for await (const entry of readDir(historyDir)) {
       if (entry.isFile && entry.name.endsWith(".jsonl")) {
-        files.push(`${historyDir}/${entry.name}`);
+        pushFile(historyDir, entry.name);
       }
     }
 
@@ -166,7 +174,7 @@ async function getHistoryFiles(historyDir: string): Promise<string[]> {
     try {
       for await (const entry of readDir(chatsDir)) {
         if (entry.isFile && entry.name.endsWith(".jsonl")) {
-          files.push(`${chatsDir}/${entry.name}`);
+          pushFile(chatsDir, entry.name);
         }
       }
     } catch {

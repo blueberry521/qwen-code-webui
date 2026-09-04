@@ -103,6 +103,27 @@ describe("History Parser", () => {
       const sessionIds = results.map((r) => r.sessionId).sort();
       expect(sessionIds).toEqual(["chats-session", "root-session"]);
     });
+
+    it("should deduplicate when the same session id exists in both root and chats/", async () => {
+      const chatsDir = join(testDir, "chats");
+      await mkdir(chatsDir, { recursive: true });
+
+      const line = JSON.stringify({
+        type: "user",
+        message: { role: "user", content: "duplicate" },
+        sessionId: "shared-session",
+        timestamp: new Date().toISOString(),
+        uuid: "uuid-d",
+      }) + "\n";
+      await writeFile(join(testDir, "shared-session.jsonl"), line);
+      await writeFile(join(chatsDir, "shared-session.jsonl"), line);
+
+      const results = await parseAllHistoryFiles(testDir);
+      expect(results.length).toBe(1);
+      expect(results[0].sessionId).toBe("shared-session");
+      // Root entry wins over the chats/ duplicate
+      expect(results[0].filePath).toBe(join(testDir, "shared-session.jsonl"));
+    });
   });
 
   describe("parseHistoryFile - Bug 3: supports CLI format", () => {
