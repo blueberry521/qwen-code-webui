@@ -106,6 +106,15 @@ const LOOP_WINDOW_MS = 300_000; // 5 minutes
 const FATAL_FINGERPRINTS = new Set(["input_closed"]);
 
 /**
+ * Whether a fingerprint is a session-fatal error. Fatal detection must stay
+ * active even when non-fatal loop detection is bypassed (e.g. YOLO mode) —
+ * the CLI process is dead and further iteration is pointless.
+ */
+export function isFatalFingerprint(fingerprint: string): boolean {
+  return FATAL_FINGERPRINTS.has(fingerprint);
+}
+
+/**
  * Check if an SDK message indicates a loop.
  * Returns loop info if detected, null otherwise.
  * State is maintained by the caller (simple object, reset per request).

@@ -2,7 +2,7 @@ import { Context } from "hono";
 import type { PermissionMode, AuthType, PermissionResult } from "@qwen-code/sdk";
 import type { ChatRequest, StreamResponse } from "../../shared/types.ts";
 import { logger } from "../utils/logger.ts";
-import { checkLoop, type LoopState } from "../utils/loopDetector.ts";
+import { checkLoop, isFatalFingerprint, type LoopState } from "../utils/loopDetector.ts";
 import { bridgeSession } from "../utils/sessionBridge.ts";
 import {
   finalizeTrackedCliRequest,
@@ -483,25 +483,30 @@ async function executeQwenCommand(
         if (forkId && !agentLoopStates.has(forkId)) {
           agentLoopStates.set(forkId, ls);
         }
-        // Skip loop detection in YOLO mode - allow autonomous iterative workflows
-        // (e.g., fix_issue skill: test → fix → test again)
-        if (mappedPermissionMode !== "yolo") {
-          const loopResult = checkLoop(sdkMessage, ls);
-          if (loopResult) {
-            logger.chat.error(
-              "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
-              { fingerprint: loopResult.fingerprint, count: loopResult.count },
-            );
-            abortController!.abort();
-            const errorMessage = loopResult.fingerprint === "input_closed"
-              ? "CLI session ended unexpectedly. Please send a new message."
-              : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
-            if (!enqueue({
-              type: "error",
-              error: errorMessage,
-            })) break;
-            break;
-          }
+        // Loop detection: non-fatal loop aborts are skipped in YOLO mode to
+        // allow autonomous iterative workflows (e.g., fix_issue skill:
+        // test → fix → test again). Fatal errors (input_closed) still abort —
+        // the CLI process is dead, matching the frontend's recordAutoRejection
+        // ordering (fatal check before the YOLO bypass). checkLoop always runs
+        // so the per-agent counters stay warm.
+        const loopResult = checkLoop(sdkMessage, ls);
+        if (
+          loopResult &&
+          (mappedPermissionMode !== "yolo" || isFatalFingerprint(loopResult.fingerprint))
+        ) {
+          logger.chat.error(
+            "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
+            { fingerprint: loopResult.fingerprint, count: loopResult.count },
+          );
+          abortController!.abort();
+          const errorMessage = loopResult.fingerprint === "input_closed"
+            ? "CLI session ended unexpectedly. Please send a new message."
+            : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
+          if (!enqueue({
+            type: "error",
+            error: errorMessage,
+          })) break;
+          break;
         }
 
         logger.chat.debug("Qwen SDK Message: {sdkMessage}", { sdkMessage });
