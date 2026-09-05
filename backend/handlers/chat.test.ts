@@ -1322,4 +1322,195 @@ describe("Chat Handler - Permission Mode Tests", () => {
       expect(requestAbortControllers.has(requestId)).toBe(true);
     });
   });
+
+  describe("Local permission response round-trip", () => {
+    it("delivers an Allow from the permission endpoint back to the SDK's canUseTool", async () => {
+      const chatRequest: ChatRequest = {
+        message: "round-trip test",
+        requestId: "test-roundtrip",
+        permissionMode: "default",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValue(chatRequest);
+
+      // Mirror the real SDK: it invokes the canUseTool handler mid-stream and
+      // blocks the message iterator until the control response arrives.
+      let releaseIterator: () => void = () => {};
+      const iteratorGate = new Promise<void>((resolve) => {
+        releaseIterator = resolve;
+      });
+      let canUseToolPromise: Promise<unknown> | undefined;
+
+      mockQuery.mockImplementation((({ options }: { options: { canUseTool: (
+            toolName: string,
+            input: Record<string, unknown>,
+            _opts: { signal: AbortSignal; suggestions?: unknown[] | null },
+          ) => Promise<unknown> } }) => {
+        canUseToolPromise = options.canUseTool(
+          "write_file",
+          { file_path: "/tmp/a.txt", content: "hi" },
+          { signal: new AbortController().signal, suggestions: null },
+        );
+        canUseToolPromise.finally(() => releaseIterator());
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield {
+              type: "assistant",
+              message: { content: [{ type: "text", text: "before permission" }] },
+              session_id: "roundtrip",
+              parent_tool_use_id: null,
+            } as any;
+            await iteratorGate;
+          },
+          interrupt: vi.fn(),
+          next: vi.fn(),
+          return: vi.fn(),
+          throw: vi.fn(),
+        };
+      }) as any);
+
+      const response = await handleChatRequest(
+        mockContext,
+        requestAbortControllers,
+        pendingPermissions,
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+
+      // 1. Stream yields the permission_request envelope for the CLI's prompt.
+      let permissionId: string | undefined;
+      let buffer = "";
+      while (!permissionId) {
+        const { done, value } = await reader.read();
+        if (done) throw new Error("stream ended before permission_request");
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parsed = JSON.parse(line);
+          if (parsed.type === "permission_request") {
+            permissionId = parsed.permissionId;
+            expect(parsed.toolName).toBe("write_file");
+            break;
+          }
+        }
+      }
+
+      // 2. User clicks Allow → frontend POSTs to the permission endpoint.
+      const permissionContext = {
+        req: {
+          json: vi.fn().mockResolvedValue({ permissionId, behavior: "allow" }),
+        },
+        json: vi.fn((_body: unknown, status?: number) => ({ status: status ?? 200 })),
+      } as any;
+      const { handlePermissionRespond } = await import("./permission");
+      const endpointResponse = await handlePermissionRespond(
+        permissionContext,
+        pendingPermissions,
+      );
+      expect(endpointResponse.status).toBe(200);
+
+      // 3. The SDK's canUseTool resolves with the user's decision — this is
+      //    what the SDK turns into the control_response on the CLI's stdin.
+      const result = (await canUseToolPromise) as {
+        behavior: string;
+        updatedInput?: Record<string, unknown>;
+      };
+      expect(result.behavior).toBe("allow");
+      expect(result.updatedInput).toMatchObject({ file_path: "/tmp/a.txt" });
+
+      // Drain the stream to completion.
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    });
+
+    it("delivers a Deny from the permission endpoint back to the SDK's canUseTool", async () => {
+      const chatRequest: ChatRequest = {
+        message: "round-trip deny test",
+        requestId: "test-roundtrip-deny",
+        permissionMode: "default",
+      };
+      mockContext.req.json = vi.fn().mockResolvedValue(chatRequest);
+
+      let releaseIterator: () => void = () => {};
+      const iteratorGate = new Promise<void>((resolve) => {
+        releaseIterator = resolve;
+      });
+      let canUseToolPromise: Promise<unknown> | undefined;
+
+      mockQuery.mockImplementation((({ options }: { options: { canUseTool: (
+            toolName: string,
+            input: Record<string, unknown>,
+            _opts: { signal: AbortSignal; suggestions?: unknown[] | null },
+          ) => Promise<unknown> } }) => {
+        canUseToolPromise = options.canUseTool(
+          "write_file",
+          { file_path: "/tmp/b.txt" },
+          { signal: new AbortController().signal, suggestions: null },
+        );
+        canUseToolPromise.finally(() => releaseIterator());
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield {
+              type: "assistant",
+              message: { content: [{ type: "text", text: "before permission" }] },
+              session_id: "roundtrip-deny",
+              parent_tool_use_id: null,
+            } as any;
+            await iteratorGate;
+          },
+          interrupt: vi.fn(),
+          next: vi.fn(),
+          return: vi.fn(),
+          throw: vi.fn(),
+        };
+      }) as any);
+
+      const response = await handleChatRequest(
+        mockContext,
+        requestAbortControllers,
+        pendingPermissions,
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+
+      let permissionId: string | undefined;
+      let buffer = "";
+      while (!permissionId) {
+        const { done, value } = await reader.read();
+        if (done) throw new Error("stream ended before permission_request");
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parsed = JSON.parse(line);
+          if (parsed.type === "permission_request") {
+            permissionId = parsed.permissionId;
+            break;
+          }
+        }
+      }
+
+      const permissionContext = {
+        req: {
+          json: vi.fn().mockResolvedValue({ permissionId, behavior: "deny" }),
+        },
+        json: vi.fn(),
+      } as any;
+      const { handlePermissionRespond } = await import("./permission");
+      await handlePermissionRespond(permissionContext, pendingPermissions);
+
+      const result = (await canUseToolPromise) as { behavior: string; message?: string };
+      expect(result.behavior).toBe("deny");
+      expect(result.message).toContain("denied");
+
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    });
+  });
 });
