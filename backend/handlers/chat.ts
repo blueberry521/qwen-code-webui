@@ -665,13 +665,17 @@ async function executeQwenCommand(
         const loopResult = checkLoop(sdkMessage, ls);
         if (loopResult) {
           logger.chat.error(
-            "Loop detected: fingerprint={fingerprint}, count={count}, aborting CLI",
-            { fingerprint: loopResult.fingerprint, count: loopResult.count },
+            "Loop detected: fingerprint={fingerprint}, count={count}, preview={preview}, aborting CLI",
+            {
+              fingerprint: loopResult.fingerprint,
+              count: loopResult.count,
+              preview: loopResult.preview,
+            },
           );
           abortController!.abort();
           const errorMessage = loopResult.fingerprint === "input_closed"
             ? "CLI session ended unexpectedly. Please send a new message."
-            : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x)`;
+            : `Auto-aborted: loop detected (${loopResult.fingerprint}, ${loopResult.count}x) — ${loopResult.preview}`;
           if (!enqueue({
             type: "error",
             error: errorMessage,
