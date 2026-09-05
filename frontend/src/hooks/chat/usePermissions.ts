@@ -29,6 +29,8 @@ interface PlanModeRequest {
 
 interface UsePermissionsOptions {
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** Current permission mode - used to skip loop detection in YOLO mode */
+  permissionMode?: PermissionMode;
 }
 
 /**
@@ -95,10 +97,21 @@ Do not attempt to call the same tool again without user confirmation.`;
 }
 
 export function usePermissions(options: UsePermissionsOptions = {}) {
-  const { onPermissionModeChange } = options;
+  const { onPermissionModeChange, permissionMode } = options;
   const [allowedTools, setAllowedTools] = useState<string[]>(() =>
     getStorageItem<string[]>(STORAGE_KEYS.ALLOWED_TOOLS, []),
   );
+
+  // Track permission mode in a ref for loop detection logic
+  // In YOLO mode, loop detection is skipped to allow autonomous iterative workflows
+  const permissionModeRef = useRef<PermissionMode>(permissionMode ?? "default");
+
+  // Sync permissionMode ref when it changes
+  useEffect(() => {
+    if (permissionMode) {
+      permissionModeRef.current = permissionMode;
+    }
+  }, [permissionMode]);
 
   // Sync allowedTools from localStorage when another tab modifies it
   useEffect(() => {
@@ -279,41 +292,53 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
   }, []);
 
   /**
-   * Generate a fingerprint for error output (first 200 chars, normalized)
+   * Simple hash function (djb2 algorithm) for fingerprint generation.
+   * Returns a base36 string for compact representation.
+   */
+  const simpleHash = useCallback((str: string): string => {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 33) ^ str.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(36);
+  }, []);
+
+  /**
+   * Generate a fingerprint for error output using full content hash.
+   * This fixes #224 where 200-char truncation caused false loop detection.
    */
   const generateErrorFingerprint = useCallback((errorOutput: string): string => {
-    // Normalize error output: take first 200 chars, remove whitespace variations
+    // Normalize error output: remove whitespace variations, use full content
     const normalized = errorOutput
-      .substring(0, 200)
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
-    return normalized;
-  }, []);
+    return simpleHash(normalized);
+  }, [simpleHash]);
 
   /**
    * Generate a key for command identification, scoped per agentId.
    * Every key carries an explicit scope prefix ("__main__:" or "<agentId>:")
    * so each agent's loop counters are fully independent (#140) and a reset
-   * can target exactly one agent's keys (#225).
+   * can target exactly one agent's keys (#225). Uses full content hashing
+   * to avoid collisions from truncation (#224).
    */
   const generateCommandKey = useCallback(
     (toolName: string, input: Record<string, unknown>, agentId?: string): string => {
       const prefix = `${agentId ?? "__main__"}:`;
       // For shell commands, use the command string
       if (input.command && typeof input.command === "string") {
-        // Normalize command: remove path variations, keep core structure
+        // Normalize command: remove whitespace variations, use full content
         const normalizedCommand = input.command
           .replace(/\s+/g, " ")
-          .trim()
-          .substring(0, 100);
-        return `${prefix}${toolName}:${normalizedCommand}`;
+          .trim();
+        return `${prefix}${toolName}:${simpleHash(normalizedCommand)}`;
       }
-      // For other tools, use JSON representation (truncated)
-      const inputStr = JSON.stringify(input).substring(0, 100);
-      return `${prefix}${toolName}:${inputStr}`;
+      // For other tools, use full JSON representation hash
+      const inputStr = JSON.stringify(input);
+      return `${prefix}${toolName}:${simpleHash(inputStr)}`;
     },
-    []
+    [simpleHash]
   );
 
   /**
@@ -329,6 +354,12 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
     ): CommandLoopRequest | null => {
       // Skip if loop detection is disabled for this session
       if (loopDetectionDisabledRef.current) {
+        return null;
+      }
+
+      // Skip loop detection in YOLO mode - allow autonomous iterative workflows
+      // (e.g., fix_issue skill: test → fix → test again)
+      if (permissionModeRef.current === "yolo") {
         return null;
       }
 
@@ -475,6 +506,9 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       }
 
       if (loopDetectionDisabledRef.current) return null;
+
+      // Skip loop detection in YOLO mode - allow autonomous iterative workflows
+      if (permissionModeRef.current === "yolo") return null;
 
       // Skip loop detection for excluded tools
       if (config.excludedTools.has(toolName)) return null;

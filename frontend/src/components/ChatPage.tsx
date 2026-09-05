@@ -522,6 +522,7 @@ export function ChatPage() {
     resetPermissions,
   } = usePermissions({
     onPermissionModeChange: setPermissionMode,
+    permissionMode, // Pass current permission mode for YOLO mode loop detection bypass
   });
 
   // Wire refs to actual functions after they are defined
@@ -1128,6 +1129,20 @@ export function ChatPage() {
     resetDenialCounter();
     clearNotification();
 
+    // In remote mode, "Allow All" must persist like the local flow (which
+    // stores the bare tool name), so send allow-permanent rather than a
+    // one-shot allow.
+    if (isRemoteWorkspace) {
+      remoteChat.sendPermissionResponse(
+        permissionRequest.requestId || "",
+        "allow-permanent",
+        undefined,
+        permissionRequest.toolName
+      );
+      closePermissionRequest();
+      return;
+    }
+
     // Defensive guard: the UI only renders "allow all" for proactive requests.
     if (!permissionRequest.permissionId) {
       closePermissionRequest();
@@ -1158,6 +1173,8 @@ export function ChatPage() {
     resetDenialCounter,
     clearNotification,
     handlePermissionAbort,
+    isRemoteWorkspace,
+    remoteChat,
   ]);
 
   const handlePermissionDeny = useCallback(async () => {
@@ -1354,7 +1371,10 @@ export function ChatPage() {
         toolInput: permissionRequest.toolInput,
         onAllow: handlePermissionAllow,
         onAllowPermanent: handlePermissionAllowPermanent,
-        onAllowAll: permissionRequest.permissionId
+        // Remote requests carry no backend permissionId (only requestId), but
+        // handlePermissionAllowAll has a remote branch — open the gate there
+        // too so the Allow-All button renders in remote sessions (#233).
+        onAllowAll: (permissionRequest.permissionId || isRemoteWorkspace)
           ? handlePermissionAllowAll
           : undefined,
         onDeny: handlePermissionDeny,
@@ -1372,7 +1392,7 @@ export function ChatPage() {
     : undefined;
 
   const handleHistoryClick = useCallback(() => {
-    const searchParams = new URLSearchParams();
+    const searchParams = new URLSearchParams(window.location.search);
     searchParams.set("view", "history");
     navigate({ search: searchParams.toString() });
   }, [navigate]);
@@ -1473,7 +1493,7 @@ export function ChatPage() {
   }, [navigate]);
 
   const handleBackToHistory = useCallback(() => {
-    const searchParams = new URLSearchParams();
+    const searchParams = new URLSearchParams(window.location.search);
     searchParams.set("view", "history");
     navigate({ search: searchParams.toString() });
   }, [navigate]);
