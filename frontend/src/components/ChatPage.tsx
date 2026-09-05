@@ -1370,7 +1370,10 @@ export function ChatPage() {
         toolInput: permissionRequest.toolInput,
         onAllow: handlePermissionAllow,
         onAllowPermanent: handlePermissionAllowPermanent,
-        onAllowAll: permissionRequest.permissionId
+        // Remote requests carry no backend permissionId (only requestId), but
+        // handlePermissionAllowAll has a remote branch — open the gate there
+        // too so the Allow-All button renders in remote sessions (#233).
+        onAllowAll: (permissionRequest.permissionId || isRemoteWorkspace)
           ? handlePermissionAllowAll
           : undefined,
         onDeny: handlePermissionDeny,
