@@ -97,6 +97,36 @@ describe("Open-ACE session pre-registration", () => {
     ).toBe("https://openace.example/api/workspace/sessions");
   });
 
+  it("extracts the token from a case-insensitive bearer scheme", async () => {
+    mockSuccessfulQuery();
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(init.body as string) as { session_id: string };
+        return new Response(
+          JSON.stringify({ success: true, data: { session_id: body.session_id } }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // RFC 9110: the auth-scheme is case-insensitive, so "bearer" must not
+    // leak into the token.
+    const context = createContext({ openaceApiUrl: "https://openace.example" });
+    (context.req.header as ReturnType<typeof vi.fn>).mockImplementation(
+      (name: string) =>
+        name === "Authorization" ? "bearer test-token" : undefined,
+    );
+
+    const response = await handleChatRequest(context, new Map(), new Map());
+    await response.text();
+
+    const registration = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((registration.headers as Record<string, string>).Authorization).toBe(
+      "Bearer test-token",
+    );
+  });
+
   it("does not treat a standalone OPENAI_BASE_URL as Open-ACE integration", () => {
     process.env.OPENAI_BASE_URL = "https://compatible.example/v1";
     expect(isIntegratedMode({} as never)).toBe(false);
@@ -302,7 +332,29 @@ describe("Open-ACE session pre-registration", () => {
     // is asserted against the real isProxyRunning/getProxyBaseUrl chain.
     const port = await startLlmProxy("http://127.0.0.1:9/upstream");
     try {
-      mockSuccessfulQuery();
+      // The mock simulates the CLI contract verified in the shipped bundles:
+      // the SDK forwards options.sessionId as --session-id (@qwen-code/sdk
+      // dist/index.mjs), and the CLI adopts it as its session id —
+      // `sessionId = argv["sessionId"]` before building its Config
+      // (dist/cli/cli.js) — so the first reported session_id is the id we
+      // passed. Simulating that here guards our side of the contract: if the
+      // handler ever registers one id but hands another to the SDK, the
+      // reported-session_id assertion below fails (that divergence is what
+      // would break turn 2 with an unregistered resume id).
+      mockQuery.mockImplementation((({ options }: { options: { sessionId?: string } }) => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "ok" }] },
+            session_id: options.sessionId,
+            parent_tool_use_id: null,
+          };
+        },
+        interrupt: vi.fn(),
+        next: vi.fn(),
+        return: vi.fn(),
+        throw: vi.fn(),
+      })) as any);
       const fetchMock = vi
         .fn()
         .mockImplementation(async (_url: string, init: RequestInit) => {
@@ -322,7 +374,7 @@ describe("Open-ACE session pre-registration", () => {
         new Map(),
         new Map(),
       );
-      await response.text();
+      const streamedText = await response.text();
 
       const registrationRequest = fetchMock.mock.calls[0][1] as RequestInit;
       const registeredId = JSON.parse(
@@ -336,6 +388,16 @@ describe("Open-ACE session pre-registration", () => {
       expect(queryArg.options.env?.OPENAI_BASE_URL).toBe(
         `http://127.0.0.1:${port}/${registeredId}`,
       );
+
+      // The id the CLI reports back (and the frontend will resume with on
+      // turn 2) must be the registered id — the turn-2 safety invariant.
+      const reportedSessionId = streamedText
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        .find((line) => line.type === "claude_json" && line.data?.session_id)
+        ?.data?.session_id;
+      expect(reportedSessionId).toBe(registeredId);
     } finally {
       await stopLlmProxy();
     }

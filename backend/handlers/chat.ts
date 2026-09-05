@@ -920,8 +920,9 @@ export async function handleChatRequest(
 
           // Register before starting the CLI. Sending an unregistered session ID
           // would make Open-ACE reject the subsequent model request with 404.
-          // Extract token from request for authentication
-          const token = c.req.header?.("Authorization")?.replace("Bearer ", "") ||
+          // Extract token from request for authentication (RFC 9110 auth-scheme
+          // is case-insensitive, so accept "bearer" as well as "Bearer")
+          const token = c.req.header?.("Authorization")?.replace(/^Bearer\s+/i, "") ||
                        c.req.query?.("token");
 
           registrationAbortController = new AbortController();
