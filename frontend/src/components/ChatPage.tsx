@@ -522,6 +522,7 @@ export function ChatPage() {
     resetPermissions,
   } = usePermissions({
     onPermissionModeChange: setPermissionMode,
+    permissionMode, // Pass current permission mode for YOLO mode loop detection bypass
   });
 
   // Wire refs to actual functions after they are defined

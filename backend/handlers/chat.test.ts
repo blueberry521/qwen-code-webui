@@ -442,6 +442,93 @@ describe("Chat Handler - Permission Mode Tests", () => {
     });
   });
 
+  describe("Loop Detection in YOLO Mode", () => {
+    const errorResult = (text: string) =>
+      ({
+        type: "user",
+        message: { content: [{ type: "text", text, is_error: true }] },
+        session_id: "test",
+        parent_tool_use_id: null,
+      }) as any;
+
+    let requestCounter = 0;
+
+    async function streamWith(
+      messages: any[],
+      permissionMode: NonNullable<ChatRequest["permissionMode"]>,
+    ) {
+      requestCounter += 1;
+      const chatRequest: ChatRequest = {
+        message: "loop test",
+        requestId: `test-yolo-loop-${requestCounter}`,
+        permissionMode,
+      };
+
+      mockContext.req.json = vi.fn().mockResolvedValue(chatRequest);
+
+      mockQuery.mockReturnValue({
+        [Symbol.asyncIterator]: async function* () {
+          for (const message of messages) {
+            yield message;
+          }
+        },
+        interrupt: vi.fn(),
+        next: vi.fn(),
+        return: vi.fn(),
+        throw: vi.fn(),
+      } as any);
+
+      const response = await handleChatRequest(
+        mockContext,
+        requestAbortControllers,
+        pendingPermissions,
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+
+      let allChunks = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allChunks += decoder.decode(value);
+      }
+      return allChunks.trim().split("\n").map((line) => JSON.parse(line));
+    }
+
+    it("does not abort a non-fatal repeated error loop in YOLO mode", async () => {
+      const err = errorResult("Error: test failure");
+      const lines = await streamWith([err, err, err, err], "yolo");
+
+      // All four errors stream through; no auto-abort error is emitted
+      const errorMessages = lines.filter((line) => line.type === "error");
+      expect(errorMessages).toHaveLength(0);
+      expect(lines[lines.length - 1]).toEqual({ type: "done" });
+    });
+
+    it("still aborts on fatal input_closed in YOLO mode", async () => {
+      const lines = await streamWith(
+        [errorResult("Error: Input closed while reading stdin")],
+        "yolo",
+      );
+
+      const errorMessages = lines.filter((line) => line.type === "error");
+      expect(errorMessages).toHaveLength(1);
+      expect(errorMessages[0]).toEqual({
+        type: "error",
+        error: "CLI session ended unexpectedly. Please send a new message.",
+      });
+    });
+
+    it("still aborts on repeated non-fatal errors outside YOLO mode", async () => {
+      const err = errorResult("Error: test failure");
+      const lines = await streamWith([err, err, err], "default");
+
+      const errorMessages = lines.filter((line) => line.type === "error");
+      expect(errorMessages).toHaveLength(1);
+      expect(errorMessages[0].error).toContain("Auto-aborted: loop detected");
+    });
+  });
+
   describe("Error Handling with Permission Mode", () => {
     it("should handle SDK errors when using permissionMode", async () => {
       const chatRequest: ChatRequest = {

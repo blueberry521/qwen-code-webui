@@ -29,6 +29,8 @@ interface PlanModeRequest {
 
 interface UsePermissionsOptions {
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** Current permission mode - used to skip loop detection in YOLO mode */
+  permissionMode?: PermissionMode;
 }
 
 /**
@@ -95,10 +97,21 @@ Do not attempt to call the same tool again without user confirmation.`;
 }
 
 export function usePermissions(options: UsePermissionsOptions = {}) {
-  const { onPermissionModeChange } = options;
+  const { onPermissionModeChange, permissionMode } = options;
   const [allowedTools, setAllowedTools] = useState<string[]>(() =>
     getStorageItem<string[]>(STORAGE_KEYS.ALLOWED_TOOLS, []),
   );
+
+  // Track permission mode in a ref for loop detection logic
+  // In YOLO mode, loop detection is skipped to allow autonomous iterative workflows
+  const permissionModeRef = useRef<PermissionMode>(permissionMode ?? "default");
+
+  // Sync permissionMode ref when it changes
+  useEffect(() => {
+    if (permissionMode) {
+      permissionModeRef.current = permissionMode;
+    }
+  }, [permissionMode]);
 
   // Sync allowedTools from localStorage when another tab modifies it
   useEffect(() => {
@@ -343,6 +356,12 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
         return null;
       }
 
+      // Skip loop detection in YOLO mode - allow autonomous iterative workflows
+      // (e.g., fix_issue skill: test → fix → test again)
+      if (permissionModeRef.current === "yolo") {
+        return null;
+      }
+
       const config = commandResultLoopConfigRef.current;
       const now = Date.now();
 
@@ -476,6 +495,9 @@ export function usePermissions(options: UsePermissionsOptions = {}) {
       }
 
       if (loopDetectionDisabledRef.current) return null;
+
+      // Skip loop detection in YOLO mode - allow autonomous iterative workflows
+      if (permissionModeRef.current === "yolo") return null;
 
       // Skip loop detection for excluded tools
       if (config.excludedTools.has(toolName)) return null;
