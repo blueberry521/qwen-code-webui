@@ -290,6 +290,37 @@ export function useStreamParser() {
               questions: data.questions,
             });
           }
+        } else if (data.type === "control_request" && data.request && context.onPermissionRequest) {
+          // Bare CLI control_request (can_use_tool), as sent by embedded
+          // hosts that pipe the CLI's raw stdout into this stream (issue
+          // #234). Note the backend itself never emits this envelope type:
+          // in vanilla local mode permission requests arrive as
+          // "permission_request" envelopes with a backend-generated
+          // permissionId registered in pendingPermissions, and the Allow/Deny
+          // response resolves the canUseTool promise inside the SDK. For bare
+          // control_request lines the response channel belongs to the
+          // embedding host — this backend has no handle to that CLI's stdin,
+          // so a response posted for request_id will 404.
+          const req = data.request;
+          const requestId = data.request_id || "";
+          if (req.subtype === "can_use_tool" && req.tool_name) {
+            // Transform permission_suggestions to suggestions format
+            const suggestions = req.permission_suggestions?.map(s => ({
+              type: s.rule,
+              label: s.rule,
+              description: s.description,
+            })) || [];
+
+            context.onPermissionRequest({
+              permissionId: requestId,
+              toolName: req.tool_name,
+              toolInput: req.input || {},
+              suggestions,
+              autoApproveMs: req.auto_approve_ms,
+              confirmationType: req.confirmation_type as "default" | "ask_user_question" | undefined,
+              questions: req.questions || [],
+            });
+          }
         } else if (data.type === "error") {
           const errorMessage: SystemMessage = {
             type: "error",

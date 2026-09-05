@@ -4,6 +4,7 @@ import {
   stopRemoteVSCode,
   getRemoteVSCodeStatus,
 } from "../api/openace";
+import { formatVSCodeFolderPath } from "../utils/pathUtils";
 
 interface RemoteVSCodeState {
   isRunning: boolean;
@@ -58,7 +59,8 @@ export function useRemoteVSCode(): RemoteVSCodeState {
         if (status.status === "running" && status.url) {
           // Build the full URL with the folder query param
           const separator = status.url.includes("?") ? "&" : "?";
-          const fullUrl = `${status.url}${separator}folder=${encodeURIComponent(workingDirectory)}`;
+          const normalizedFolder = formatVSCodeFolderPath(workingDirectory);
+          const fullUrl = `${status.url}${separator}folder=${encodeURIComponent(normalizedFolder)}`;
           setIsRunning(true);
           setUrl(fullUrl);
           setIsLoading(false);

@@ -48,8 +48,9 @@ export function HistoryView({ encodedName }: HistoryViewProps) {
   }, [encodedName]);
 
   const handleConversationSelect = (sessionId: string) => {
-    const searchParams = new URLSearchParams();
+    const searchParams = new URLSearchParams(window.location.search);
     searchParams.set("sessionId", sessionId);
+    searchParams.delete("view"); // Clear view param so session renders
     navigate({ search: searchParams.toString() });
   };
 

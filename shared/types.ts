@@ -1,5 +1,5 @@
 export interface StreamResponse {
-  type: "claude_json" | "error" | "done" | "aborted" | "permission_request" | "heartbeat";
+  type: "claude_json" | "error" | "done" | "aborted" | "permission_request" | "heartbeat" | "control_request";
   data?: unknown; // SDKMessage object for claude_json type (Qwen SDK message)
   error?: string;
   // Fields for permission_request type
@@ -18,6 +18,23 @@ export interface StreamResponse {
     options: Array<{ label: string; description?: string }>;
     multiSelect: boolean;
   }>;
+  // Fields for control_request type (local mode permission requests)
+  request_id?: string;
+  request?: {
+    subtype: string;
+    tool_name: string;
+    tool_use_id?: string;
+    input?: Record<string, unknown>;
+    permission_suggestions?: Array<{ rule: string; description: string }>;
+    auto_approve_ms?: number;
+    confirmation_type?: string;
+    questions?: Array<{
+      question: string;
+      header: string;
+      options: Array<{ label: string; description?: string }>;
+      multiSelect: boolean;
+    }>;
+  };
 }
 
 export interface ChatRequest {

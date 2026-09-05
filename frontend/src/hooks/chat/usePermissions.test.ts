@@ -351,6 +351,61 @@ describe("usePermissions - Command Result Loop Detection", () => {
     expect(loopRequest!.errorOutput).toBe("go: go.mod file not found");
   });
 
+  it("should not detect loop for different errors with same first 200 chars (#224)", () => {
+    const { result } = renderHook(() => usePermissions());
+
+    // Simulate pytest output scenarios from Issue #224
+    // Long header with error at the end - differences appear after 200 chars
+    const header = `============================= test session starts ==============================
+platform linux -- Python 3.11.4, pytest-7.4.0, pluggy-1.0.0
+rootdir: /project
+plugins: cov-4.1.0, xdist-3.3.1, timeout-2.2.0
+collected 150 items
+
+================================= test session =================================
+Running test suite for module auth
+Test environment: staging
+Database: postgresql://localhost:5432/test_db
+Cache: redis://localhost:6379/0
+
+`;
+
+    const error1 = header + "FAILED test_auth.py::test_login - AssertionError: expected 200, got 401";
+    const error2 = header + "FAILED test_auth.py::test_logout - TypeError: session is None";
+    const error3 = header + "FAILED test_auth.py::test_refresh - KeyError: token not found";
+
+    // First call - error 1
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest" },
+        { exitCode: 1, output: error1 }
+      );
+    });
+
+    // Second call - different error (but same first 200 chars before fix)
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest" },
+        { exitCode: 1, output: error2 }
+      );
+    });
+
+    // Third call - another different error (but same first 200 chars before fix)
+    let loopRequest: CommandLoopRequest | null = null;
+    act(() => {
+      loopRequest = result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest" },
+        { exitCode: 1, output: error3 }
+      );
+    });
+
+    // Should NOT detect loop because errors are actually different
+    expect(loopRequest).toBeNull();
+  });
+
   it("should not detect loop for different errors", () => {
     const { result } = renderHook(() => usePermissions());
 
@@ -383,6 +438,94 @@ describe("usePermissions - Command Result Loop Detection", () => {
     });
 
     expect(loopRequest).toBeNull();
+  });
+
+  it("should not detect loop when first 200 chars are identical but errors differ (#224)", () => {
+    const { result } = renderHook(() => usePermissions());
+
+    // Simulate pytest output where first 200 chars are identical (test framework banner)
+    // but the actual error is different each time
+    const pytestBanner = `============================= test session starts ==============================
+platform linux -- Python 3.11.4
+collected 10 items
+test_foo.py`;
+
+    // First call - test_bar fails
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: `${pytestBanner} FFE [100%]
+FAILED test_foo.py::test_bar - AssertionError: expected 1, got 0` }
+      );
+    });
+
+    // Second call - test_baz fails (different error, same first 200 chars)
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: `${pytestBanner} ..F [100%]
+FAILED test_foo.py::test_baz - TypeError: unsupported operand type` }
+      );
+    });
+
+    // Third call - test_qux fails (different error, same first 200 chars)
+    let loopRequest: CommandLoopRequest | null = null;
+    act(() => {
+      loopRequest = result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: `${pytestBanner} .F. [100%]
+FAILED test_foo.py::test_qux - KeyError: 'missing'` }
+      );
+    });
+
+    // Should NOT detect loop because errors are actually different
+    expect(loopRequest).toBeNull();
+  });
+
+  it("should detect loop when full error output is identical (#224)", () => {
+    const { result } = renderHook(() => usePermissions());
+
+    // Same error repeated 3 times
+    const pytestOutput = `============================= test session starts ==============================
+platform linux -- Python 3.11.4
+collected 10 items
+test_foo.py F [100%]
+FAILED test_foo.py::test_bar - AssertionError: expected 1, got 0`;
+
+    // First call
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: pytestOutput }
+      );
+    });
+
+    // Second call - same error
+    act(() => {
+      result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: pytestOutput }
+      );
+    });
+
+    // Third call - same error, should trigger loop detection
+    let loopRequest: CommandLoopRequest | null = null;
+    act(() => {
+      loopRequest = result.current.checkCommandResultLoop(
+        "run_shell_command",
+        { command: "pytest test_foo.py" },
+        { exitCode: 1, output: pytestOutput }
+      );
+    });
+
+    // Should detect loop because full error output is identical
+    expect(loopRequest).not.toBeNull();
+    expect(loopRequest!.toolName).toBe("run_shell_command");
   });
 
   it("should not detect loop for successful results", () => {

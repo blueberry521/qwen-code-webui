@@ -1,12 +1,12 @@
 /**
- * Hook for tracking session with Open-ACE
+ * Hook for tracking session end with Open-ACE
  *
  * When running in integrated mode (inside Open-ACE iframe),
- * this hook notifies Open-ACE about session start/end for
- * project statistics tracking.
+ * this hook notifies Open-ACE about session end for statistics tracking.
  *
- * Note: Real-time stats sync has been removed. All session statistics
- * are now extracted from JSONL files by fetch_qwen.py script.
+ * Note: Session registration is now handled by the backend before the first
+ * request, ensuring proper session attribution from the first turn (issue #222).
+ * This hook only handles session end notification.
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -18,7 +18,6 @@ import {
 interface SessionTracker {
   sessionId: string | null;
   projectPath: string | null;
-  startTime: Date | null;
 }
 
 export function useOpenAceSessionTracker(
@@ -29,57 +28,15 @@ export function useOpenAceSessionTracker(
   const trackerRef = useRef<SessionTracker>({
     sessionId: null,
     projectPath: null,
-    startTime: null,
   });
-  const openAceSessionIdRef = useRef<string | null>(null);
 
   const integrated = isIntegratedMode();
 
-  // Start tracking when a new session begins
-  const startTracking = useCallback(async (sessionId: string, path: string) => {
-    if (!integrated || !path) return;
-
-    // Don't restart if already tracking this session
-    if (trackerRef.current.sessionId === sessionId) return;
-
-    // End previous session if any
-    if (openAceSessionIdRef.current) {
-      await endTracking();
-    }
-
-    try {
-      const response = await fetch(getOpenAceSessionApi(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tool_name: "qwen-code",
-          session_type: "chat",
-          project_path: path,
-          title: `Session in ${path.split("/").pop()}`,
-          session_id: sessionId,  // Pass the qwen CLI session_id to backend for consistency
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        openAceSessionIdRef.current = data.data?.session_id;
-        trackerRef.current = {
-          sessionId,
-          projectPath: path,
-          startTime: new Date(),
-        };
-        console.log("[Open-ACE] Started tracking session:", openAceSessionIdRef.current);
-      }
-    } catch (error) {
-      console.error("[Open-ACE] Failed to start session tracking:", error);
-    }
-  }, [integrated]);
-
   // End tracking when session ends
   const endTracking = useCallback(async () => {
-    if (!integrated || !openAceSessionIdRef.current) return;
+    if (!integrated || !trackerRef.current.sessionId) return;
 
-    const sessionId = openAceSessionIdRef.current;
+    const sessionId = trackerRef.current.sessionId;
 
     try {
       await fetch(getOpenAceSessionApi(sessionId, "complete"), {
@@ -91,44 +48,46 @@ export function useOpenAceSessionTracker(
     } catch (error) {
       console.error("[Open-ACE] Failed to end session tracking:", error);
     } finally {
-      openAceSessionIdRef.current = null;
       trackerRef.current = {
         sessionId: null,
         projectPath: null,
-        startTime: null,
       };
     }
   }, [integrated]);
 
-  // Track session changes
+  // Track session ID changes for end notification
   useEffect(() => {
     if (!isActive || !integrated) return;
 
+    // Update tracked session ID
     if (currentSessionId && projectPath) {
-      startTracking(currentSessionId, projectPath);
+      trackerRef.current = {
+        sessionId: currentSessionId,
+        projectPath,
+      };
     }
 
     // Cleanup on unmount or when session becomes inactive
     return () => {
-      if (openAceSessionIdRef.current) {
+      if (trackerRef.current.sessionId) {
         // Use navigator.sendBeacon for reliable cleanup on page unload
-        const sessionId = openAceSessionIdRef.current;
+        const sessionId = trackerRef.current.sessionId;
         const url = getOpenAceSessionApi(sessionId, "complete");
-        
+
         if (navigator.sendBeacon) {
           navigator.sendBeacon(url);
         }
       }
     };
-  }, [currentSessionId, projectPath, isActive, integrated, startTracking]);
+  }, [currentSessionId, projectPath, isActive, integrated]);
 
   // Handle page unload
   useEffect(() => {
     if (!integrated) return;
 
     const handleBeforeUnload = () => {
-      if (openAceSessionIdRef.current) {
-        const sessionId = openAceSessionIdRef.current;
+      if (trackerRef.current.sessionId) {
+        const sessionId = trackerRef.current.sessionId;
         const url = getOpenAceSessionApi(sessionId, "complete");
         navigator.sendBeacon(url);
       }
@@ -141,9 +100,8 @@ export function useOpenAceSessionTracker(
   }, [integrated]);
 
   return {
-    startTracking,
     endTracking,
-    isTracking: !!openAceSessionIdRef.current,
-    openAceSessionId: openAceSessionIdRef.current,
+    isTracking: !!trackerRef.current.sessionId,
+    trackedSessionId: trackerRef.current.sessionId,
   };
 }
