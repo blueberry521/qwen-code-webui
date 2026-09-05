@@ -30,6 +30,7 @@ import {
   isIntegratedMode,
   registerWithOpenAce,
 } from "./chat.ts";
+import { startLlmProxy, stopLlmProxy } from "../utils/llmProxy.ts";
 
 function createContext(
   config: Record<string, unknown>,
@@ -290,6 +291,54 @@ describe("Open-ACE session pre-registration", () => {
       prompt: "hello",
       options: expect.objectContaining({ sessionId: registeredId }),
     });
+  });
+
+  it("routes the first SDK request through the proxy with the registered session ID", async () => {
+    // The first-turn attribution of #220/#221/#222 only materializes when the
+    // CLI's OPENAI_BASE_URL points at the local proxy under the registered
+    // session ID — the proxy injects X-Session-Id from that path segment.
+    // Start the real proxy (binds an ephemeral localhost port; the upstream
+    // is never contacted because the SDK query is mocked) so the env wiring
+    // is asserted against the real isProxyRunning/getProxyBaseUrl chain.
+    const port = await startLlmProxy("http://127.0.0.1:9/upstream");
+    try {
+      mockSuccessfulQuery();
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(async (_url: string, init: RequestInit) => {
+          const body = JSON.parse(init.body as string) as { session_id: string };
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: { session_id: body.session_id },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          );
+        });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const response = await handleChatRequest(
+        createContext({ openaceApiUrl: "https://openace.example" }),
+        new Map(),
+        new Map(),
+      );
+      await response.text();
+
+      const registrationRequest = fetchMock.mock.calls[0][1] as RequestInit;
+      const registeredId = JSON.parse(
+        registrationRequest.body as string,
+      ).session_id;
+
+      const queryArg = mockQuery.mock.calls[0][0] as {
+        options: { env?: Record<string, string>; sessionId?: string };
+      };
+      expect(queryArg.options.sessionId).toBe(registeredId);
+      expect(queryArg.options.env?.OPENAI_BASE_URL).toBe(
+        `http://127.0.0.1:${port}/${registeredId}`,
+      );
+    } finally {
+      await stopLlmProxy();
+    }
   });
 
   it("removes a possibly committed session when the registration response is lost", async () => {
